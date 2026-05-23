@@ -1,27 +1,31 @@
 """Shared dataclasses used across every LineWise contract.
 
-These types are the on-the-wire schema between ETL, ML, optimizer, simulator
-and UI. Keep them framework-agnostic (plain ``dataclass``, no Pydantic) so the
-optimizer and simulator can be tested without spinning up FastAPI.
+These are the on-the-wire types between ETL, ML, optimiser, simulator and UI.
+They are deliberately framework-agnostic (plain ``dataclass``, no Pydantic)
+so the optimiser and simulator can be unit-tested without spinning up FastAPI.
+
+Column / field names follow English snake_case. The mapping back to the
+original Damm Spanish columns lives in each data-product README under
+``docs/data/`` so the lineage is one click away.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal, Mapping
 
 # ---------------------------------------------------------------------------
 # Domain primitives
 # ---------------------------------------------------------------------------
 
 LineId = Literal[14, 17, 19]
-"""Damm canning lines in scope: L14, L17, L19."""
+"""Damm canning lines in scope. Was ``TREN`` in the source files."""
 
 Format = Literal["1/2", "1/3", "2/5"]
-"""Can formats: 50cl (1/2), 33cl (1/3), 44cl (2/5).
+"""Can formats: 50 cl (1/2), 33 cl (1/3), 44 cl (2/5).
 
-Line capability (hard):
+Line capability (hard constraint, enforced in ``line_capability.csv``):
     L14 -> {"1/2", "1/3"}
     L17 -> {"1/3"}
     L19 -> {"1/2", "1/3", "2/5"}
@@ -31,100 +35,181 @@ Source = Literal["historico_2025", "plan_2026", "whatif_usuario"]
 SlotType = Literal["produccion", "limpieza", "mantenimiento", "cambio"]
 EdgeSource = Literal["teorico", "empirico", "hibrido", "ml"]
 
+# Changeover segments. Mapped from the ``C.*`` boolean flags in
+# ``Cambios 14_17_19_ 2025.xlsx``. ``segments[name] = hours`` means "this many
+# hours of the total changeover came from this kind of change".
+ChangeoverSegment = Literal[
+    "brand",          # C. Brand
+    "container",      # C. Envase
+    "cap",            # C. CAP
+    "primary_pack",   # C. Primario
+    "secondary_pack", # C. Secundario
+    "pallet",         # C. Palet
+    "product",        # C. Producto
+    "volume",         # C. Volum
+    "startup",        # arranque (constant per line)
+    "shutdown",       # final (constant per line)
+]
+
 
 # ---------------------------------------------------------------------------
-# SKU catalogue
+# Time window
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class WindowConfig:
+    """Time-window for demand aggregation and optimiser planning horizon.
+
+    Defaults to 7-day Monday-anchored windows — matches Damm's weekly planning
+    rhythm. The optimiser plans **one window at a time**, so this also fixes
+    the horizon for a single ``optimize()`` call. For longer horizons, the
+    caller chains multiple optimisations.
+
+    * ``days``        — bucket size in days (>= 1). Default 7.
+    * ``anchor``      — how to align bucket boundaries to the calendar.
+                        ``"monday"`` aligns to ISO week, ``"fixed_start"``
+                        starts from ``start_date``.
+    * ``start_date``  — only used when ``anchor == "fixed_start"``.
+    """
+
+    days: int = 7
+    anchor: Literal["monday", "fixed_start"] = "monday"
+    start_date: date | None = None
+
+    def __post_init__(self) -> None:
+        if self.days < 1:
+            raise ValueError(f"WindowConfig.days must be >= 1, got {self.days}")
+        if self.anchor == "fixed_start" and self.start_date is None:
+            raise ValueError("WindowConfig.anchor='fixed_start' requires start_date")
+
+
+# ---------------------------------------------------------------------------
+# SKU catalogue (skus.csv)
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class SKU:
-    """Static attributes of a SKU (rows are deduped from ``executed_runs``)."""
+    """One row of ``skus.csv``. Deduped from ``wo_master.csv``."""
 
-    sku_id: str
-    format: Format
-    marca: str
-    familia: str
-    cerveza: str
-    tipo_envase: str
-    mat_precio: str
-    packaging_primario: str | None
-    packaging_secundario: str | None
-    uds_por_caja: float | None
+    sku_id: str                              # was SKU
+    container_type: Format                   # was Tipo Envase
+    brand: str                               # was Marca
+    family: str                              # was Familia
+    supra_brand: str                         # was Supramarca
+    beer: str                                # was Cerveza
+    material_id: str                         # was ID Material Precio
+    material_label: str                      # was Mat. Precio
+    container: str                           # was Envase
+    primary_packaging: str | None            # was Packaging Primario
+    secondary_packaging: str | None          # was Packaging Secundario
+    pallet_type: str | None                  # was Tipo Palet
+    units_per_case: float | None             # was Unidad/caja
 
 
 # ---------------------------------------------------------------------------
-# Demand
+# Demand (demand.csv)
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class DemandBucket:
-    """One row of ``demand.csv``: how many units of one SKU to produce in one ISO week.
+    """One row of ``demand.csv``: units of one SKU to produce in one window.
 
-    The optimiser decides *which line*, *which day* and *which turn* — these
-    fields are deliberately absent from the schema.
+    The optimiser decides ``line_id``, day and turn — these are absent here on
+    purpose. Window size is governed by :class:`WindowConfig`.
     """
 
-    window_id: str            # e.g. "2025-W18"
-    window_start: date        # inclusive Monday
-    window_end: date          # inclusive Sunday
-    sku: str
-    uds_demanded: int         # >= 0
+    window_id: str                           # e.g. "2025-W18-7d"
+    window_start: date                       # inclusive
+    window_end: date                         # inclusive
+    sku_id: str
+    units_demanded: int                      # >= 0; was uds_demanded
     source: Source = "historico_2025"
-    prioridad: int = 3        # 1-5; 5 = cannot be dropped
+    priority: int = 3                        # 1..5; 5 means cannot be dropped
 
 
 # ---------------------------------------------------------------------------
-# Line capability and changeovers
+# Line capability (line_capability.csv)
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class SkuLineCapability:
-    """Whether a SKU can run on a line, and how fast it runs there on average."""
+class LineCapability:
+    """One row of ``line_capability.csv``: whether ``sku_id`` runs on ``line_id``,
+    and how fast / well on average. Materialised because (a) it's a hard
+    optimiser gate and (b) the optimiser uses ``median_speed`` as the node-cost
+    fallback when ML node-cost is not yet available.
+    """
 
-    sku: str
-    tren: LineId
-    can_produce: bool                # hard gate (format compatibility + history)
-    speed_median_uds_h: float        # median over historical WOs
-    oee_median: float                # median OEE on this (sku, line) pair
-    n_wos_historico: int             # support — used to decide ML vs fallback
+    sku_id: str
+    line_id: LineId
+    can_produce: bool                        # hard gate; respects format constraint
+    median_speed_uds_per_hour: float         # from wo_master.units_produced / productive_hours
+    median_oee: float                        # from wo_master.oee
+    n_workorders_observed: int               # support; informs ML vs fallback decision
 
+
+# ---------------------------------------------------------------------------
+# Changeovers (changeover_costs.csv and edge_cost_train.csv)
+# ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class ChangeoverEdge:
-    """Cost in hours of going from ``sku_from`` to ``sku_to`` on line ``tren``."""
+    """Cost in hours of going from ``sku_from_id`` to ``sku_to_id`` on ``line_id``.
 
-    tren: LineId
-    sku_from: str
-    sku_to: str
-    hours: float
+    Fused theoretical (from ``Tabla CF Prat``) + empirical / ML. ``segments``
+    breaks the total down by which kind of change drives the cost. The
+    invariant ``sum(segments.values()) == total_hours`` is enforced by the
+    ETL / ML producers — consumers may assume it.
+    """
+
+    line_id: LineId
+    sku_from_id: str
+    sku_to_id: str
+    total_hours: float
+    segments: Mapping[ChangeoverSegment, float]
     source: EdgeSource
 
 
 # ---------------------------------------------------------------------------
-# Calendar and incidents
+# Calendar (line_calendar.csv)
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class CalendarConstraint:
-    """Forced event in a line's calendar (cleaning, maintenance, injected breakdown)."""
+class LineCalendarEvent:
+    """One row of ``line_calendar.csv``: a forced event in a line's calendar.
 
-    tren: LineId
-    regla_temporal: str                                       # e.g. "friday_weekly", "monday_biweekly"
-    evento: Literal["limpieza", "mantenimiento", "averia"]
-    duracion_h: float
-    frecuencia: str                                           # human-readable
-    fecha_ini: datetime | None = None                         # for one-off events (averías)
+    Two flavours:
+    * **Recurring** rules (cleaning Friday 8 h, maintenance Monday biweekly 8 h)
+      → ``recurrence`` set, ``start_ts`` is ``None``.
+    * **One-off** events (injected breakdown, ad-hoc maintenance) →
+      ``start_ts`` set, ``recurrence`` ignored.
+    """
 
+    line_id: LineId
+    event_type: Literal["cleaning", "maintenance", "breakdown"]
+    duration_hours: float
+    recurrence: str | None = None            # e.g. "weekly:friday", "biweekly:monday"
+    start_ts: datetime | None = None         # for one-off events
+
+
+# ---------------------------------------------------------------------------
+# Incidents (incidents.csv — used by simulator, not optimiser)
+# ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class Incident:
-    """Historical incident anchored to (line, instant). Used for deterministic replay."""
+    """Historical incident anchored to ``(line_id, start_ts)`` for fair replay."""
 
-    tren: LineId
-    instante_inicio: datetime
-    duracion_h: float
-    motivo: Literal["averia", "mantenimiento_no_planificado", "saturacion", "falta_producto", "otro"]
-    of_origen: str | None = None                              # WO that surfaced the incident
+    line_id: LineId
+    start_ts: datetime
+    duration_hours: float
+    cause: Literal[
+        "breakdown",
+        "unplanned_maintenance",
+        "downstream_block",
+        "upstream_starve",
+        "other",
+    ]
+    source_wo_id: str | None = None          # the WO that surfaced the incident
 
 
 # ---------------------------------------------------------------------------
@@ -136,27 +221,27 @@ class Slot:
     """One row of ``sequence.csv`` — the optimiser's atomic output."""
 
     slot_id: str
-    tren: LineId
-    sku: str
-    fecha_inicio: datetime
-    fecha_fin: datetime
-    uds_planificadas: int
-    tipo: SlotType
-    sku_prev: str | None = None
-    coste_cambio_h: float | None = None
-    oee_esperado: float | None = None
+    line_id: LineId
+    sku_id: str
+    start_ts: datetime
+    end_ts: datetime
+    units_planned: int
+    slot_type: SlotType
+    sku_prev_id: str | None = None
+    changeover_hours: float | None = None
+    expected_oee: float | None = None
 
 
 @dataclass(frozen=True)
 class Sequence:
-    """A full proposed schedule: ordered slots grouped logically by line."""
+    """Full proposed schedule for one planning window."""
 
     slots: tuple[Slot, ...]
-    horizon_start: date
-    horizon_end: date
+    window_start: date
+    window_end: date
 
-    def for_line(self, tren: LineId) -> tuple[Slot, ...]:
-        return tuple(s for s in self.slots if s.tren == tren)
+    def for_line(self, line_id: LineId) -> tuple[Slot, ...]:
+        return tuple(s for s in self.slots if s.line_id == line_id)
 
 
 # ---------------------------------------------------------------------------
@@ -165,15 +250,20 @@ class Sequence:
 
 @dataclass(frozen=True)
 class OptimizerHyperparams:
-    """Tunables loaded from ``data/clean/optimizer_hyperparams.yaml``."""
+    """Tunables loaded from ``data/clean/optimizer_hyperparams.yaml``.
 
-    horizon_days: int = 7
+    ``aggregation_window.days`` is the single time-window knob — it controls
+    both demand-bucket size *and* the planning horizon for one ``optimize()``
+    call. There is no separate ``horizon_days`` parameter.
+    """
+
+    aggregation_window: WindowConfig = field(default_factory=WindowConfig)
     freeze_days: int = 0
     lambda_changeover: float = 1.0
-    mu_demanda_no_cubierta: float = 1.0
-    nu_beneficio: float = 1.0
-    chunk_max_productive_h: float = 8.0
-    margen_per_sku: dict[str, float] = field(default_factory=dict)        # default 1.0 if absent
+    mu_unmet_demand: float = 1.0
+    nu_margin: float = 1.0
+    chunk_max_productive_hours: float = 8.0
+    margin_per_sku: Mapping[str, float] = field(default_factory=dict)    # default 1.0 if absent
 
 
 # ---------------------------------------------------------------------------
@@ -182,50 +272,50 @@ class OptimizerHyperparams:
 
 @dataclass(frozen=True)
 class LineMetrics:
-    tren: LineId
-    horas_totales: float
-    horas_productivas: float
-    horas_cambio: float
-    horas_limpieza: float
-    horas_mantenimiento: float
-    horas_incidentes: float
-    horas_baja_velocidad: float
-    oee_semana: float
+    line_id: LineId
+    total_hours: float
+    productive_hours: float
+    changeover_hours: float
+    cleaning_hours: float
+    maintenance_hours: float
+    incident_hours: float
+    low_speed_hours: float
+    oee_window: float
     coverage_pct: float
-    makespan_h: float                                          # time when last slot ends
+    makespan_hours: float                    # time when last slot ends
 
 
 @dataclass(frozen=True)
 class SimulationReport:
-    """Output of ``Simulator.evaluate_sequence``."""
+    """Output of :meth:`SimulatorContract.evaluate_sequence`."""
 
     per_line: dict[LineId, LineMetrics]
-    oee_ponderado_global: float
-    horas_productivas_total: float
-    horas_cambio_total: float
+    oee_weighted_global: float
+    productive_hours_total: float
+    changeover_hours_total: float
     coverage_pct_global: float
-    makespan_h_global: float
-    uds_no_producidas: dict[str, int]                          # sku -> uds dropped
+    makespan_hours_global: float
+    unproduced_units: dict[str, int]         # sku_id -> units dropped
 
 
 # ---------------------------------------------------------------------------
-# Optimizer input/output bundles
+# Optimizer I/O bundles
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class OptimizerInput:
     demand: tuple[DemandBucket, ...]
-    capability: tuple[SkuLineCapability, ...]
+    capability: tuple[LineCapability, ...]
     changeovers: tuple[ChangeoverEdge, ...]
-    calendar: tuple[CalendarConstraint, ...]
+    calendar: tuple[LineCalendarEvent, ...]
     hyperparams: OptimizerHyperparams
 
 
 @dataclass(frozen=True)
 class OptimizerOutput:
     sequence: Sequence
-    makespan_per_line_h: dict[LineId, float]
-    makespan_h: float                                          # max over lines
-    dropped: tuple[tuple[str, int], ...]                       # (sku, uds_not_produced)
-    feasible: bool                                             # False -> dropouts happened
+    makespan_per_line_hours: dict[LineId, float]
+    makespan_hours: float                    # max over lines
+    dropped: tuple[tuple[str, int], ...]     # (sku_id, units_not_produced)
+    feasible: bool                           # False -> dropouts happened
     solver_log: str | None = None

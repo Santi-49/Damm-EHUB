@@ -1,12 +1,4 @@
-"""Changeover ML implementation — skeleton.
-
-Implements ``ChangeoverModelContract`` from
-``packages.contracts.module.changeover_ml``.
-
-The hackathon team fills this in once ETL milestone M1 lands and
-``data/clean/executed_runs.csv`` + ``data/clean/changes_actual.csv`` are
-available.
-"""
+"""Changeover ML implementation — skeleton."""
 
 from __future__ import annotations
 
@@ -35,16 +27,16 @@ class ChangeoverModel(ChangeoverModelContract):
 
     async def predict(
         self,
-        sku_from: str,
-        sku_to: str,
-        tren: LineId,
+        sku_from_id: str,
+        sku_to_id: str,
+        line_id: LineId,
         context: Mapping[str, str | float | datetime] | None = None,
     ) -> ChangeoverPrediction:
         raise NotImplementedError("ChangeoverModel.predict — implement after ETL M1")
 
     async def predict_matrix(
         self,
-        skus: tuple[str, ...],
-        tren: LineId,
+        sku_ids: tuple[str, ...],
+        line_id: LineId,
     ) -> dict[tuple[str, str], ChangeoverPrediction]:
         raise NotImplementedError("ChangeoverModel.predict_matrix — implement after ETL M1")

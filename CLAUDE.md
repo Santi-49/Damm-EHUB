@@ -189,10 +189,18 @@ the same objective — no emergency branch.
 |---|---|---|
 | Data cleaning (ETL) | [`services/etl/`](services/etl/) | `ETLContract` |
 | Demand dataset gen | [`services/etl/`](services/etl/) | `DemandBuilderContract` |
-| ML changeover predictor | [`services/changeover-ml/`](services/changeover-ml/) | `ChangeoverModelContract` |
+| ML changeover predictor | [`services/changeover_ml/`](services/changeover_ml/) | `ChangeoverModelContract` |
 | Graph optimiser (Arch D) | [`services/optimizer/`](services/optimizer/) | `GraphOptimizerContract` |
 | Simulator (deterministic OEE) | [`services/simulator/`](services/simulator/) | `SimulatorContract` |
 | UI (Gantt, drill-down, what-if) | [`apps/landing/`](apps/landing/), [`apps/web/`](apps/web/) | OpenAPI types |
+
+**Data products:** nine clean CSVs catalogued in [`docs/data/overview.md`](docs/data/overview.md) —
+`wo_master`, `skus`, `wo_changeovers`, `demand`, `line_capability`, `line_calendar`,
+`changeover_costs`, `node_cost_train`, `edge_cost_train` (+ `incidents` for the simulator).
+Cleaning rules in [`docs/data/cleaning_rules.md`](docs/data/cleaning_rules.md).
+
+**Time-window knob:** `WindowConfig(days=7, anchor="monday")` drives both demand
+aggregation *and* the optimiser planning horizon. Change it once, both move.
 
 **Team (3 people, ~2 days)**:
 - Person 1 — Data & Simulator (ETL + simulator + `incident_log` replay + historical OEE validation)

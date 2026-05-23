@@ -2,15 +2,16 @@
 
 > System-level view of the LineWise solution. See also: [System Overview](overview.md) ·
 > [Module Contracts](../contracts.md) · [Functionality map](../functionalities/overview.md) ·
-> deep dives in [`docs/linewise/`](../linewise/).
+> [Data products catalogue](../data/overview.md) · deep dives in [`docs/linewise/`](../linewise/).
 
 ## 1. One-paragraph summary
 
-Weekly demand → graph (nodes = SKU chunks, edges = changeover times) → OR-Tools VRP with
-three "vehicles" (lines) and a **makespan** objective → proposed sequence → deterministic
-simulator that replays real incidents → side-by-side comparison with `S_real`. ML is
-scoped to **predicting edge weights only**; OEE is *computed*, never predicted, at the
-reporting layer.
+Weekly demand → graph (nodes = SKU chunks, edges = changeover times) →
+OR-Tools VRP with three "vehicles" (lines) and a **makespan** objective →
+proposed sequence → deterministic simulator that replays real incidents →
+side-by-side comparison with `S_real`. ML is scoped to **predicting edge
+weights only** (segmented + total); OEE is *computed*, never predicted, at
+the reporting layer.
 
 ## 2. Why Architecture D
 
@@ -28,28 +29,28 @@ Four options were compared (full breakdown in
 
 ```
                 ┌──────────────┐
-data/raw/  ──►  │  services/   │  ──►  data/clean/*.csv
+data/raw/  ──►  │  services/   │  ──►  data/clean/*.csv (see docs/data/overview.md)
 *.xlsx          │  etl/        │
                 └──────────────┘
                        │
                        ▼
                 ┌──────────────────────────────┐
-                │  services/optimizer/         │     uses:
-                │    1. build graph            │  ◄── sku_line_capability.csv
-                │    2. ask ML for edge costs  │  ◄── services/changeover-ml/
-                │    3. solve OR-Tools VRP     │  ◄── changeover_matrix.csv (floor)
-                │       (3 vehicles, makespan) │  ◄── calendar_constraints.csv
-                │    4. emit sequence          │  ◄── demand.csv
+                │  services/optimizer/         │  inputs:
+                │    1. build graph (chunks)   │  ◄── demand.csv
+                │    2. ask ML for edge costs  │  ◄── services/changeover_ml/
+                │    3. solve OR-Tools VRP     │  ◄── changeover_costs.csv (floor)
+                │       (3 vehicles, makespan) │  ◄── line_capability.csv
+                │    4. emit Sequence          │  ◄── line_calendar.csv
                 └──────────────────────────────┘
-                       │ sequence (list[Slot])
+                       │ Sequence
                        ▼
                 ┌──────────────────────────────┐
-                │  services/simulator/         │     uses:
-                │   evaluate_sequence()        │  ◄── sku_line_capability.csv
-                │   + incident replay          │  ◄── incident_log.csv
-                │   = OEE, h_changes, coverage │  ◄── calendar_constraints.csv
+                │  services/simulator/         │  inputs:
+                │   evaluate_sequence()        │  ◄── line_capability.csv
+                │   + incident replay          │  ◄── incidents.csv
+                │   = OEE, h_changes, coverage │  ◄── line_calendar.csv
                 └──────────────────────────────┘
-                       │ metrics
+                       │ SimulationReport
                        ▼
                 ┌──────────────────────────────┐
                 │  services/api/   →  apps/web │
@@ -62,62 +63,102 @@ data/raw/  ──►  │  services/   │  ──►  data/clean/*.csv
 | # | Functionality | Folder | Contract | Owner |
 |---|---|---|---|---|
 | 1 | **ETL — Data cleaning** | [`services/etl/`](../../services/etl/) | [`ETLContract`](../../packages/contracts/module/etl.py) | Person 1 |
-| 2 | **Demand dataset generation** (weekly buckets) | [`services/etl/`](../../services/etl/) (sub-task) | [`DemandBuilderContract`](../../packages/contracts/module/etl.py) | Person 1 |
-| 3 | **ML changeover predictor** | [`services/changeover-ml/`](../../services/changeover-ml/) | [`ChangeoverModelContract`](../../packages/contracts/module/changeover_ml.py) | Person 2 |
+| 2 | **Demand dataset generation** (`WindowConfig`-driven) | [`services/etl/`](../../services/etl/) (sub-task) | [`DemandBuilderContract`](../../packages/contracts/module/etl.py) | Person 1 |
+| 3 | **ML changeover predictor** (segmented + total) | [`services/changeover_ml/`](../../services/changeover_ml/) | [`ChangeoverModelContract`](../../packages/contracts/module/changeover_ml.py) | Person 2 |
 | 4 | **Graph optimiser (Arch D)** | [`services/optimizer/`](../../services/optimizer/) | [`GraphOptimizerContract`](../../packages/contracts/module/optimizer.py) | Person 2 |
 | 5 | **Simulator (deterministic OEE)** | [`services/simulator/`](../../services/simulator/) | [`SimulatorContract`](../../packages/contracts/module/simulator.py) | Person 1 |
 | — | **UI (Gantt + drill-down + what-if)** | [`apps/landing/`](../../apps/landing/), [`apps/web/`](../../apps/web/) | OpenAPI types in [`packages/contracts/api/generated/`](../../packages/contracts/api/generated/) | Person 3 |
 
-Each service folder has a `README.md` that re-states the contract in natural language
-(input, output, invariants, validation criteria) plus a skeleton `app/` directory.
+Each service folder has a `README.md` that re-states the contract in natural
+language (input, output, invariants, validation criteria) plus a skeleton
+`app/` directory.
 
-## 5. The graph optimiser contract — in plain words
+## 5. Data products
 
-**Input:** a complete graph where every node is a SKU chunk that must be produced,
-with line-specific node cost (production time = run_time + ramp_up) and line-specific
-edge cost (changeover time from SKU A to SKU B on a given line). Each line has
-**hard capability constraints** (L14: 1/2 & 1/3 only; L17: 1/3 only; L19: 1/2 & 1/3 & 2/5).
+Nine clean CSVs, all catalogued in [`docs/data/overview.md`](../data/overview.md):
 
-**Output:** a partitioning of the nodes into three subgraphs (one per line) **and** an
-ordered path within each subgraph that respects the capability constraints.
+**MVP-1 of the optimiser (no ML):**
+[`wo_master`](../data/wo_master.md), [`skus`](../data/skus.md),
+[`wo_changeovers`](../data/wo_changeovers.md),
+[`demand`](../data/demand.md), [`line_capability`](../data/line_capability.md),
+[`line_calendar`](../data/line_calendar.md),
+[`changeover_costs`](../data/changeover_costs.md).
 
-**Objective:** minimise the **maximum total time across the three lines** (makespan),
-with a small ε-weighted sum-of-times tie-breaker so the solver doesn't leave one line idle.
+**Post-MVP (ML):** [`node_cost_train`](../data/node_cost_train.md),
+[`edge_cost_train`](../data/edge_cost_train.md).
+
+**Simulator (M2, deferred):** [`incidents`](../data/incidents.md).
+
+Cleaning recipe: [`docs/data/cleaning_rules.md`](../data/cleaning_rules.md).
+
+## 6. The single time-window knob
+
+Both demand aggregation and the optimiser planning horizon are driven by
+[`WindowConfig`](../../packages/contracts/module/schemas.py):
+
+```python
+WindowConfig(days=7, anchor="monday")    # default
+```
+
+Change `days` and both `demand.csv` row volume **and** one optimiser run
+move in lockstep. The default 7-day Monday anchor matches Damm's weekly
+planning rhythm; switch to `days=14` for fortnight planning, or
+`anchor="fixed_start"` with `start_date=…` for the demo week.
+
+## 7. The graph optimiser contract — in plain words
+
+**Input:** a complete graph where every node is a SKU chunk that must be
+produced, with line-specific node cost (production time = `units_chunk /
+median_speed_uds_per_hour + ramp_up`) and line-specific edge cost
+(changeover hours from `sku_from_id` to `sku_to_id`). Each line has **hard
+capability constraints** (L14: 1/2 & 1/3; L17: 1/3 only; L19: 1/2, 1/3, 2/5).
+
+**Output:** a partitioning of the nodes into three subgraphs (one per line)
+**and** an ordered path within each subgraph that respects the capability
+constraints.
+
+**Objective:** minimise the **maximum total time across the three lines**
+(makespan), with a small ε-weighted sum-of-times tie-breaker so the solver
+doesn't leave one line idle.
 
 **Why this is well-formed**:
-- The lines' demands are independent only through the makespan term, which is exactly
-  the right coupling for a multi-vehicle routing problem.
-- Capability is encoded as a hard constraint on which vehicle visits each node.
-- Forced events (cleaning Friday 8 h, maintenance Monday-quincennial 8 h) are nodes
-  with time-window constraints.
-- Insufficient capacity is handled by **disjunctions with penalty** — each demand node
-  is optional with penalty `margen[sku] × uds_chunk`, so the solver drops the
-  cheapest-margin SKUs first without any branching in the code.
 
-## 6. Two-engine decoupling
+- The lines' demands are independent only through the makespan term, which is
+  exactly the right coupling for a multi-vehicle routing problem.
+- Capability is encoded as a hard constraint on which vehicle visits each node.
+- Forced events (cleaning Friday 8 h, maintenance Monday-biweekly 8 h) are
+  nodes with time-window constraints from
+  [`line_calendar`](../data/line_calendar.md).
+- Insufficient capacity is handled by **disjunctions with penalty** — each
+  demand node is optional with penalty `margin_per_sku[sku_id] *
+  units_chunk`, so the solver drops the cheapest-margin SKUs first without
+  any branching in the code.
+
+## 8. Two-engine decoupling
 
 ```
 ┌───────────────────┐   sequence    ┌───────────────────┐
 │  OPTIMISER        │  ──────────►  │  SIMULATOR        │
 │  predicts ONLY    │               │  deterministic    │
 │  changeover times │               │  OEE + incidents  │
-│  (via ML edges)   │  ◄───────────-│  emits "infeasible"│
-└───────────────────┘  capacity     └───────────────────┘
-                       feedback
+│  (via ML edges,   │  ◄────────────│  emits            │
+│   segmented)      │  capacity     │  "infeasible"     │
+└───────────────────┘  feedback     └───────────────────┘
 ```
 
-The optimiser **never** predicts OEE. The simulator never makes routing decisions.
-This means:
+The optimiser **never** predicts OEE. The simulator never makes routing
+decisions. This means:
 
 1. **Fair comparison** with `S_real` — same simulator, same incidents, same calendar.
-2. **Bounded ML target** — changeover_time is observable and validatable; OEE is not.
-3. **No risk of divergence** between "predicted OEE" used for routing and "reported OEE"
-   used for KPI.
+2. **Bounded ML target** — changeover hours (segmented) are observable and
+   validatable; OEE is not.
+3. **No risk of divergence** between "predicted OEE" used for routing and
+   "reported OEE" used for KPI.
 
-## 7. Implementation milestones
+## 9. Implementation milestones
 
-(See [`docs/challenge/CONSTRAINTS.md`](../challenge/CONSTRAINTS.md) for dates and
-[`docs/linewise/resumen.md`](../linewise/resumen.md) §6 for the full Gantt.)
+(See [`docs/challenge/CONSTRAINTS.md`](../challenge/CONSTRAINTS.md) for dates
+and [`docs/linewise/resumen.md`](../linewise/resumen.md) §6 for the full Gantt.)
 
 | Milestone | Unblocks |
 |---|---|
@@ -128,7 +169,7 @@ This means:
 | **M5** What-if (breakdown / urgent demand) wired | re-plan story |
 | **M6** Dry-run | confidence for the jury |
 
-## 8. Risks (carried from `docs/linewise/cobertura_brief.md` §10)
+## 10. Risks (carried from [`docs/linewise/cobertura_brief.md`](../linewise/cobertura_brief.md) §10)
 
 | Risk | Severity | Mitigation |
 |---|---|---|

@@ -1,21 +1,24 @@
 # Functionality Map
 
 > Where each piece of LineWise lives, who owns it, and which contract it satisfies.
-> Companion to [`docs/architecture/linewise.md`](../architecture/linewise.md).
+> Companion to [`docs/architecture/linewise.md`](../architecture/linewise.md) and the
+> [data products catalogue](../data/overview.md).
 
 ## TL;DR
 
 Five functionalities, five workspaces, five contracts. The UI lives in the existing
-`apps/` workspaces.
+`apps/` workspaces. Time-window aggregation is a single `WindowConfig(days=7)` knob
+that drives both `demand.csv` row volume and the optimiser planning horizon.
 
 ```
-data/raw/  ─►  [1] services/etl/         ─►  data/clean/*.csv
+data/raw/  ─►  [1] services/etl/         ─►  data/clean/*.csv (catalogue in docs/data/)
                        │                          │
                        │ DemandBuilderContract    │
+                       │ (WindowConfig-driven)    │
                        ▼                          ▼
-              data/clean/demand.csv         [3] services/changeover-ml/
+              data/clean/demand.csv         [3] services/changeover_ml/
                        │                          │ ChangeoverModelContract
-                       │                          │
+                       │                          │ (segmented + total)
                        └─────►  [4] services/optimizer/  ──► Sequence
                                        │
                                        ▼
@@ -31,7 +34,7 @@ data/raw/  ─►  [1] services/etl/         ─►  data/clean/*.csv
 |---|---|---|---|---|---|
 | 1 | **Data cleaning (ETL)** — raw Excel → clean CSV | [`services/etl/`](../../services/etl/) | [`ETLContract`](../../packages/contracts/module/etl.py) | Person 1 | M1 (Sat 13:00) |
 | 2 | **Demand dataset** — weekly buckets `(sku, semana, uds)` | same folder as #1 | [`DemandBuilderContract`](../../packages/contracts/module/etl.py) | Person 1 | M1 (Sat 13:00) |
-| 3 | **ML changeover predictor** — predicts edge weights | [`services/changeover-ml/`](../../services/changeover-ml/) | [`ChangeoverModelContract`](../../packages/contracts/module/changeover_ml.py) | Person 2 | Sun morning |
+| 3 | **ML changeover predictor** — predicts edge weights | [`services/changeover_ml/`](../../services/changeover_ml/) | [`ChangeoverModelContract`](../../packages/contracts/module/changeover_ml.py) | Person 2 | Sun morning |
 | 4 | **Graph optimiser (Arch D)** — m-TSP / VRP on 3 lines | [`services/optimizer/`](../../services/optimizer/) | [`GraphOptimizerContract`](../../packages/contracts/module/optimizer.py) | Person 2 | M4 (Sun 14:00) |
 | 5 | **Simulator** — deterministic OEE + incident replay | [`services/simulator/`](../../services/simulator/) | [`SimulatorContract`](../../packages/contracts/module/simulator.py) | Person 1 | M2 (Sat 19:00) |
 | — | **UI** (Gantt, drill-down, what-if) | [`apps/web/`](../../apps/web/), [`apps/landing/`](../../apps/landing/) | OpenAPI types from [`packages/contracts/api/generated/`](../../packages/contracts/api/generated/) | Person 3 | rolling |
@@ -41,10 +44,10 @@ data/raw/  ─►  [1] services/etl/         ─►  data/clean/*.csv
 ```python
 # All shared dataclasses
 from packages.contracts.module.schemas import (
-    DemandBucket, SkuLineCapability, ChangeoverEdge,
-    CalendarConstraint, Incident, Slot, Sequence,
+    DemandBucket, LineCapability, ChangeoverEdge,
+    LineCalendarEvent, Incident, Slot, Sequence,
     OptimizerInput, OptimizerOutput, SimulationReport,
-    OptimizerHyperparams,
+    OptimizerHyperparams, WindowConfig,
 )
 
 # Each functionality's Protocol
@@ -69,15 +72,18 @@ A single-import backward-compatible shim still lives at
 ### 2. Demand dataset — `DemandBuilderContract`
 
 > Aggregate any planning source (historical 2025, JDA plan 2026, what-if form) to
-> weekly `DemandBucket(window_id, window_start, window_end, sku, uds_demanded,
-> source, prioridad)`. The optimiser never sees `tren / día / turno` — those
-> are decisions, not demand.
+> windowed `DemandBucket(window_id, window_start, window_end, sku_id,
+> units_demanded, source, priority)`. Bucket size = `WindowConfig.days` (default 7).
+> The optimiser never sees `line_id / day / turn` — those are decisions, not demand.
 
 ### 3. ML changeover — `ChangeoverModelContract`
 
-> Given two SKUs and a line, predict the changeover time in hours, with a
-> confidence and a source tag (`ml` / `hibrido` / `teorico`). The optimiser uses
-> the result as an edge weight in its graph. Never predict OEE.
+> Given two SKUs and a line, predict the **total** changeover time in hours and
+> its **segmented breakdown** (brand / container / cap / packaging / pallet /
+> product / volume / startup / shutdown) such that the segments sum to the total.
+> Return a confidence and a source tag (`ml` / `hibrido` / `teorico`). The
+> optimiser uses the total as an edge weight; the segments power the SHAP-based
+> drill-down. Never predict OEE.
 
 ### 4. Graph optimiser — `GraphOptimizerContract`
 
@@ -97,6 +103,17 @@ A single-import backward-compatible shim still lives at
 > deterministically against `(tren, instante)` so `S_real` and `S_opt` are
 > measured under the same conditions. Return a `SimulationReport` with per-line
 > and global OEE, hour decomposition, coverage and makespan.
+
+## Data products map (which contract reads which CSV)
+
+| Contract | Reads from `data/clean/` | Produces |
+|---|---|---|
+| `ETLContract` | (raw Excel) | All nine clean CSVs in [`docs/data/overview.md`](../data/overview.md) |
+| `DemandBuilderContract` | `wo_master.csv` or `Planificado…XLSX` + `skus.csv` | `demand.csv` |
+| `ChangeoverModelContract.fit` | `edge_cost_train.csv`, `changeover_costs.csv` (floor) | model artefact |
+| `ChangeoverModelContract.predict*` | model artefact + `changeover_costs.csv` (fallback) | `ChangeoverPrediction` (in-memory) |
+| `GraphOptimizerContract` | `demand.csv`, `line_capability.csv`, `changeover_costs.csv`, `line_calendar.csv` + ML predictions | `Sequence` (in-memory; persisted as `sequence.csv` by the API) |
+| `SimulatorContract` | `Sequence` + `line_capability.csv` + `line_calendar.csv` + `incidents.csv` | `SimulationReport` |
 
 ## Definition of "ready to integrate"
 

@@ -1,18 +1,24 @@
 """Contract for the changeover-time ML predictor.
 
-The ML model has **one job**: given two SKUs and a line, predict the changeover
-time in hours. It does NOT predict OEE. OEE is computed by the simulator after
-the optimiser has chosen a sequence (see ``simulator.py``).
+The model has **one job**: given two SKUs and a line, predict the changeover
+time in hours, split into segments (brand change, container change, …) that
+sum to the total. It does NOT predict OEE — that is computed by the
+simulator post-hoc.
 
-Why this scoping matters:
+Why the segmented output matters:
 
-* The target is observable in history (``PNP`` chunk that precedes marcha plus
-  changeover flags from ``Cambios``) → walk-forward validation is straightforward.
-* The optimiser uses the prediction as an edge weight in its graph; clamping
-  to the theoretical floor (``Tabla CF Prat``) is the implementation's
-  responsibility, not the optimiser's.
-* The ML target stays tabular (LightGBM / XGBoost work great) and explainable
-  (SHAP on a single regression target).
+* Each segment has an interpretable cause the planner recognises.
+* The sum-equals-total invariant ``sum(segments.values()) == total_hours`` is
+  a built-in sanity check — if a model violates it, training data is leaking.
+* SHAP attribution on each segment is far more actionable than on the total.
+
+Why the scope stays narrow:
+
+* The target is observable in history: ``empirical_changeover_h`` (the ``PNP``
+  chunk that precedes marcha, validated against the ``C.*`` flags from
+  ``Cambios``) → walk-forward validation is straightforward.
+* No leakage risk into the OEE path — the optimiser uses these predictions as
+  edge weights, and the simulator separately computes OEE.
 """
 
 from __future__ import annotations
@@ -22,31 +28,48 @@ from datetime import datetime
 from pathlib import Path
 from typing import Mapping, Protocol
 
-from .schemas import EdgeSource, LineId
+from .schemas import ChangeoverSegment, EdgeSource, LineId
 
 
 @dataclass(frozen=True)
 class TrainingData:
-    """Tabular rows derived from history with the empirical changeover time as target."""
+    """Reference to the tabular training set produced by ETL.
 
-    rows_csv: Path                    # one row per observed (sku_from, sku_to, tren, ...)
+    Each row of ``edge_cost_train.csv`` is one observed transition with both
+    ``total_changeover_hours`` and per-``ChangeoverSegment`` columns.
+    """
+
+    rows_csv: Path
     feature_columns: tuple[str, ...]
-    target_column: str = "changeover_time_h"
+    target_total_column: str = "total_changeover_hours"
+    target_segment_columns: tuple[str, ...] = (
+        "segment_brand_hours",
+        "segment_container_hours",
+        "segment_cap_hours",
+        "segment_primary_pack_hours",
+        "segment_secondary_pack_hours",
+        "segment_pallet_hours",
+        "segment_product_hours",
+        "segment_volume_hours",
+        "segment_startup_hours",
+        "segment_shutdown_hours",
+    )
 
 
 @dataclass(frozen=True)
 class WalkForwardSplit:
-    """Time-based split: train on weeks < ``cutoff``, validate on weeks >= ``cutoff``."""
+    """Time-based split. Train on windows < ``cutoff``, validate on windows >= cutoff."""
 
-    cutoff_week: str                  # ISO week, e.g. "2025-W30"
+    cutoff_window_id: str                    # e.g. "2025-W30-7d"
 
 
 @dataclass(frozen=True)
 class TrainingResult:
     model_path: Path
-    mae_hours: float
-    rmse_hours: float
-    r2: float
+    mae_hours_total: float
+    rmse_hours_total: float
+    r2_total: float
+    mae_hours_per_segment: Mapping[ChangeoverSegment, float]
     n_train: int
     n_val: int
     feature_importance: Mapping[str, float] = field(default_factory=dict)
@@ -54,28 +77,31 @@ class TrainingResult:
 
 @dataclass(frozen=True)
 class ChangeoverPrediction:
-    """Single prediction with metadata so the optimiser knows when to trust it."""
+    """One prediction with the segmented breakdown.
 
-    sku_from: str
-    sku_to: str
-    tren: LineId
-    hours: float
-    confidence: float                  # 0..1; falls back to theoretical when low
-    source: EdgeSource                 # 'ml' | 'hibrido' | 'teorico'
+    Invariant: ``round(sum(segments.values()), 6) == round(total_hours, 6)``.
+    """
+
+    sku_from_id: str
+    sku_to_id: str
+    line_id: LineId
+    total_hours: float
+    segments: Mapping[ChangeoverSegment, float]
+    confidence: float                        # 0..1; falls back to theoretical when low
+    source: EdgeSource                       # 'ml' | 'hibrido' | 'teorico'
 
 
 class ChangeoverModelContract(Protocol):
     """Train, persist, and serve changeover-time predictions.
 
-    Operating mode:
+    Operating mode (per ``(sku_from, sku_to, line_id)`` triple):
 
-    * If the (``sku_from``, ``sku_to``, ``tren``) pair has >= 5 historical
-      observations → return the ML prediction (``source = "ml"``).
-    * If 1..4 observations → blend ML with theoretical (``source = "hibrido"``).
-    * If 0 observations → fall back to ``Tabla CF Prat`` (``source = "teorico"``).
+    * >= 5 historical observations → ML prediction (``source = "ml"``).
+    * 1..4 observations            → blend with theoretical (``source = "hibrido"``).
+    * 0 observations               → fall back to ``Tabla CF Prat`` (``source = "teorico"``).
 
-    The optimiser is allowed to clamp the returned ``hours`` to the theoretical
-    floor regardless of source — that policy lives in ``services/optimizer/``.
+    The optimiser may additionally clamp the returned hours to the theoretical
+    floor — that policy lives in ``services/optimizer/``.
     """
 
     async def fit(
@@ -83,31 +109,24 @@ class ChangeoverModelContract(Protocol):
         data: TrainingData,
         split: WalkForwardSplit,
     ) -> TrainingResult:
-        """Train and persist the model. Idempotent for the same ``data`` + ``split``."""
         ...
 
     async def load(self, model_path: Path) -> None:
-        """Load a previously trained model. Required before any ``predict*`` call."""
         ...
 
     async def predict(
         self,
-        sku_from: str,
-        sku_to: str,
-        tren: LineId,
+        sku_from_id: str,
+        sku_to_id: str,
+        line_id: LineId,
         context: Mapping[str, str | float | datetime] | None = None,
     ) -> ChangeoverPrediction:
-        """Predict hours for a single transition.
-
-        ``context`` may include ``"day_of_week"``, ``"hour"``, ``"previous_oee"``,
-        etc. Implementations are free to ignore unknown keys.
-        """
         ...
 
     async def predict_matrix(
         self,
-        skus: tuple[str, ...],
-        tren: LineId,
+        sku_ids: tuple[str, ...],
+        line_id: LineId,
     ) -> dict[tuple[str, str], ChangeoverPrediction]:
-        """Bulk variant — populates every (sku_from, sku_to) pair the optimiser needs."""
+        """Bulk variant for the optimiser's graph construction."""
         ...

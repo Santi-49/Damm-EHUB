@@ -1,9 +1,5 @@
 """Back-compat single-import surface.
 
-The original template documented ``packages.contracts.module.interface`` as the
-contract location. LineWise grew into five focused protocols, but importers
-that still reach for ``interface`` continue to work via these re-exports.
-
 Prefer importing the focused modules directly:
 
     from packages.contracts.module.optimizer import GraphOptimizerContract
@@ -20,12 +16,15 @@ from .changeover_ml import (
 from .etl import DemandBuilderContract, ETLContract, ETLResult
 from .optimizer import GraphOptimizerContract
 from .schemas import (
-    CalendarConstraint,
+    SKU,
     ChangeoverEdge,
+    ChangeoverSegment,
     DemandBucket,
     EdgeSource,
     Format,
     Incident,
+    LineCalendarEvent,
+    LineCapability,
     LineId,
     LineMetrics,
     OptimizerHyperparams,
@@ -33,44 +32,45 @@ from .schemas import (
     OptimizerOutput,
     Sequence,
     SimulationReport,
-    SKU,
-    SkuLineCapability,
     Slot,
     SlotType,
     Source,
+    WindowConfig,
 )
 from .simulator import SimulatorContract
 
 __all__ = [
     # Domain primitives
+    "ChangeoverSegment",
+    "EdgeSource",
     "Format",
     "LineId",
-    "Source",
     "SlotType",
-    "EdgeSource",
+    "Source",
+    "WindowConfig",
     # Dataclasses
     "SKU",
-    "DemandBucket",
-    "SkuLineCapability",
     "ChangeoverEdge",
-    "CalendarConstraint",
+    "ChangeoverPrediction",
+    "DemandBucket",
+    "ETLResult",
     "Incident",
-    "Slot",
-    "Sequence",
+    "LineCalendarEvent",
+    "LineCapability",
+    "LineMetrics",
     "OptimizerHyperparams",
     "OptimizerInput",
     "OptimizerOutput",
-    "LineMetrics",
+    "Sequence",
     "SimulationReport",
+    "Slot",
     "TrainingData",
     "TrainingResult",
     "WalkForwardSplit",
-    "ChangeoverPrediction",
-    "ETLResult",
     # Protocols
-    "ETLContract",
-    "DemandBuilderContract",
     "ChangeoverModelContract",
+    "DemandBuilderContract",
+    "ETLContract",
     "GraphOptimizerContract",
     "SimulatorContract",
 ]

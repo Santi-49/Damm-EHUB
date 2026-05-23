@@ -8,7 +8,7 @@
 | What you want to touch | Where it lives |
 |---|---|
 | Raw Excel → clean CSV, weekly demand dataset | [`services/etl/`](../etl/) |
-| ML predictor of changeover times | [`services/changeover-ml/`](../changeover-ml/) |
+| ML predictor of changeover times | [`services/changeover_ml/`](../changeover_ml/) |
 | Graph optimiser (Arch D, OR-Tools VRP) | [`services/optimizer/`](../optimizer/) |
 | Deterministic OEE simulator | [`services/simulator/`](../simulator/) |
 | FastAPI gateway that orchestrates the four above | [`services/api/`](../api/) |

@@ -7,7 +7,9 @@
 
 ## LineWise (challenge)
 - [Functionality map](functionalities/overview.md) — five workspaces, owners, contracts
-- [Datos](linewise/datos.md) — raw Excel inventory, joins, clean schema
+- [Data products catalogue](data/overview.md) — every clean CSV, schema, lineage
+- [Data cleaning rules](data/cleaning_rules.md) — derivations, outliers, discarded files
+- [Datos](linewise/datos.md) — raw Excel inventory, joins, clean schema (original analysis)
 - [Reto](linewise/reto.md) — problem statement, objective function, post-mortem methodology
 - [Implementación](linewise/implementacion.md) — Arch D deep dive vs alternatives
 - [Resumen](linewise/resumen.md) — visual overview, Gantt, sync points

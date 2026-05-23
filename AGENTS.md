@@ -244,7 +244,7 @@ line: **LineWise Operaciones — Damm × Engineering HUB.** We model weekly cann
 production on L14/L17/L19 as a multi-vehicle VRP (Architecture D), with ML-predicted
 changeover edge weights and a deterministic OEE simulator for fair comparison vs the
 real plan. Five workspaces: [`services/etl/`](services/etl/),
-[`services/changeover-ml/`](services/changeover-ml/),
+[`services/changeover_ml/`](services/changeover_ml/),
 [`services/optimizer/`](services/optimizer/),
 [`services/simulator/`](services/simulator/), plus the UI in `apps/web/`.
 Full map: [`docs/functionalities/overview.md`](docs/functionalities/overview.md).

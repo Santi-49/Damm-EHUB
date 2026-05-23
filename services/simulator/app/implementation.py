@@ -1,18 +1,13 @@
-"""Simulator implementation — skeleton.
-
-Implements ``SimulatorContract`` from
-``packages.contracts.module.simulator``. Fill in during M2 (Sat afternoon)
-right after ETL lands the cleaned datasets.
-"""
+"""Simulator implementation — skeleton."""
 
 from __future__ import annotations
 
 from packages.contracts.module.schemas import (
-    CalendarConstraint,
     Incident,
+    LineCalendarEvent,
+    LineCapability,
     Sequence,
     SimulationReport,
-    SkuLineCapability,
 )
 from packages.contracts.module.simulator import SimulatorContract
 
@@ -23,8 +18,8 @@ class Simulator(SimulatorContract):
     async def evaluate_sequence(
         self,
         sequence: Sequence,
-        capability: tuple[SkuLineCapability, ...],
-        calendar: tuple[CalendarConstraint, ...],
+        capability: tuple[LineCapability, ...],
+        calendar: tuple[LineCalendarEvent, ...],
         incidents: tuple[Incident, ...],
     ) -> SimulationReport:
         raise NotImplementedError("Simulator.evaluate_sequence — implement in M2")
@@ -32,6 +27,6 @@ class Simulator(SimulatorContract):
     async def detect_infeasibility(
         self,
         sequence: Sequence,
-        calendar: tuple[CalendarConstraint, ...],
+        calendar: tuple[LineCalendarEvent, ...],
     ) -> bool:
         raise NotImplementedError("Simulator.detect_infeasibility — implement in M2")
