@@ -62,9 +62,9 @@ packages/contracts/api/openapi.yaml
 # ── LineWise / Damm data (confidential) ───────────────────────────────
 # Raw, cleaned, and derived datasets must never leave the hackathon repo.
 # See docs/challenge/CHALLENGE.md §"Rules" and docs/linewise/cobertura_brief.md §10.
-data/raw/
-data/clean/
-data/external/
+data/raw/*
+data/clean/*
+data/external/*
 *.xlsx
 *.XLSX
 *.parquet

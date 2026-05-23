@@ -86,9 +86,12 @@ services/etl/
 
 ```bash
 # Run ETL end-to-end from data/raw/ to data/clean/
-python -m services.etl.app.implementation --raw data/raw --out data/clean
+make etl
 
-# Build weekly demand from history
-python -m services.etl.app.implementation demand \
-    --source historico_2025 --window-days 7 --out data/clean/demand.csv
+# Rebuild individual implemented products
+make etl-wo-master
+make etl-skus
+
+# Use custom directories
+make etl RAW_DIR=/path/to/raw CLEAN_DIR=/path/to/clean
 ```

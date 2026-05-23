@@ -5,7 +5,11 @@
 #   Chocolatey install: choco install make  (then use Git Bash shell)
 # ─────────────────────────────────────────────────────────────────────
 
-.PHONY: dev stop build migrate makemigration seed generate-types test test-local lint
+.PHONY: dev stop build migrate makemigration seed generate-types test test-local lint \
+        etl etl-wo-master etl-skus
+
+RAW_DIR ?= data/raw
+CLEAN_DIR ?= data/clean
 
 # ── Docker ────────────────────────────────────────────────────────────
 dev:
@@ -53,6 +57,16 @@ test-local:
 lint:
 	docker compose run --rm api ruff check app tests
 
+# ── Data / ETL ─────────────────────────────────────────────────────────
+etl:
+	python -m services.etl --raw $(RAW_DIR) --out $(CLEAN_DIR)
+
+etl-wo-master:
+	python -m services.etl.app.joins.wo_master --raw $(RAW_DIR) --out $(CLEAN_DIR)
+
+etl-skus:
+	python -m services.etl.app.joins.skus --raw $(RAW_DIR) --out $(CLEAN_DIR)
+
 # ── Help ──────────────────────────────────────────────────────────────
 help:
 	@echo "Available targets:"
@@ -66,3 +80,6 @@ help:
 	@echo "  test             Run tests with coverage (Docker)"
 	@echo "  test-local       Run tests with coverage (local environment)"
 	@echo "  lint             Run code linting (Docker)"
+	@echo "  etl              Build implemented clean data products from data/raw"
+	@echo "  etl-wo-master    Build only data/clean/wo_master.csv"
+	@echo "  etl-skus         Build only data/clean/skus.csv"

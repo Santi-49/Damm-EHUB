@@ -81,6 +81,64 @@ Open `http://localhost:8000/docs` to browse the API interactively.
 
 ---
 
+## Data
+
+LineWise depends on confidential Damm Excel exports. Keep all source files under
+`data/raw/` and do not commit anything from `data/`. Clean outputs are written to
+`data/clean/`.
+
+### Source files
+
+The ETL that is implemented today builds `wo_master.csv` and `skus.csv`. It
+requires these four files in `data/raw/`:
+
+| File | Used for |
+|---|---|
+| `OEE 14_17_19_ 2025.xlsx` | Work-order spine, OEE metrics, SKU attributes |
+| `Tiempo 14_17_19_ 2025.xlsx` | Work-order duration and time decomposition |
+| `Volumen 14_17_19_ 2025.xlsx` | Units and hectoliters produced |
+| `Mantenimiento 14_17_19_ 2025.xlsx` | Maintenance calls and intervention time |
+
+The full LineWise data inventory also includes these raw files. Some downstream
+products are documented but not implemented yet:
+
+| File | Pipeline role |
+|---|---|
+| `Cambios 14_17_19_ 2025.xlsx` | Empirical changeover history for `wo_changeovers.csv` |
+| `Tabla CF Prat 2026_14_17_19.xlsx` | Theoretical changeover costs and calendar rules |
+| `Planificado - producciones 14 - 17 - 19.XLSX` | Planned week used to build `demand.csv` |
+| `Produccion_L14,17,19_18-22.xlsx` | Actual demo-week production for comparison |
+| `data - 2026-05-18T181640.542.xlsx` | Discarded duplicate of `OEE 14_17_19_ 2025.xlsx` |
+| `Diario Hl_Planif.xlsx` | Discarded pivoted planning export with inconsistent units |
+
+### ETL commands
+
+```bash
+make etl
+# Builds the implemented clean outputs:
+#   data/clean/wo_master.csv
+#   data/clean/skus.csv
+
+make etl-wo-master
+# Rebuilds only data/clean/wo_master.csv
+
+make etl-skus
+# Rebuilds only data/clean/skus.csv
+```
+
+To use a different source or output directory:
+
+```bash
+make etl RAW_DIR=/path/to/raw CLEAN_DIR=/path/to/clean
+```
+
+The full ETL currently reports the remaining MVP products
+(`wo_changeovers.csv`, `line_capability.csv`, `line_calendar.csv`,
+`changeover_costs.csv`) as `not_implemented` warnings until those joins/parsers
+are added.
+
+---
+
 ## AI tooling — MCP servers and Skills
 
 This template is set up to work with Claude Code. Two things power that integration: **MCP servers** and **Skills**.

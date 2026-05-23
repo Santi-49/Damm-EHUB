@@ -14,6 +14,7 @@ from packages.contracts.module.etl import (
 )
 from packages.contracts.module.schemas import DemandBucket, Source, WindowConfig
 
+from .joins.skus import build_skus
 from .joins.wo_master import build_wo_master
 from .parsers.mantenimiento import parse_mantenimiento
 from .parsers.oee import parse_oee
@@ -68,11 +69,15 @@ def _build_sync(raw_dir: Path, out_dir: Path) -> ETLResult:
     rows_per_table["wo_master"] = len(wo_master)
     all_warnings.extend(wo_warnings)
 
+    # ── skus ──────────────────────────────────────────────────────────────────
+    skus, skus_warnings = build_skus(oee_df)
+    skus.to_csv(out_dir / "skus.csv", index=False)
+    rows_per_table["skus"] = len(skus)
+    all_warnings.extend(skus_warnings)
+
     # ── stubs for remaining MVP products ─────────────────────────────────────
-    # skus, wo_changeovers, line_capability, line_calendar,
-    # changeover_costs, demand — implement in subsequent passes
     for product in (
-        "skus", "wo_changeovers", "line_capability",
+        "wo_changeovers", "line_capability",
         "line_calendar", "changeover_costs",
     ):
         all_warnings.append(f"not_implemented: {product}.csv not yet produced")
