@@ -42,7 +42,7 @@ class ETLContract(Protocol):
                                   from ``changeover_costs.csv``.
     * ``demand.csv``              Window-aggregated historical demand from
                                   ``wo_master.csv`` (default source: ``historico_2025``).
-    * ``line_capability.csv``     Materialised ``(sku_id, line_id) -> can_produce + median speed/OEE``
+    * ``line_capability.csv``     Materialised ``(sku_id, line_id) -> can_produce + median/fallback speed/OEE``
     * ``line_calendar.csv``       Forced events per line (cleaning + maintenance)
     * ``changeover_costs.csv``    SKU-to-SKU theoretical transition matrix expanded from
                                   ``Tabla CF Prat``.

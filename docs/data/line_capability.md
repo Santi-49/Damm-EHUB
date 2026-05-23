@@ -2,7 +2,7 @@
 
 **Status:** MVP · **Produced by:** [`services/etl/`](../../services/etl/) ·
 **Consumers:** optimiser (hard gate + node-cost fallback), simulator (speed lookup) ·
-**Granularity:** one row per `(sku_id, line_id)` pair (~510 rows for 170 SKUs × 3 lines)
+**Granularity:** one row per `(sku_id, line_id)` pair (169 SKUs × 3 lines = 507 rows)
 
 A materialised lookup that combines a **hard gate** (`can_produce`) with the
 **node-cost baseline** (`median_speed_uds_per_hour`). The optimiser uses both:
@@ -18,10 +18,10 @@ A materialised lookup that combines a **hard gate** (`can_produce`) with the
 |---|---|---|
 | `sku_id` | str (PK part) | FK → `skus.sku_id`. |
 | `line_id` | int (14 / 17 / 19) | Canning line. PK part. |
-| `can_produce` | bool | Hard gate. **True** iff the SKU's `container_type` is in the line's allowed set *and* at least one historical WO exists. |
-| `median_speed_uds_per_hour` | float | Median of `wo_master.units_produced / wo_master.productive_hours` over all WOs of this `(sku_id, line_id)`. NaN when `n_workorders_observed == 0`. |
-| `median_oee` | float | Median of `wo_master.oee`. NaN when `n_workorders_observed == 0`. |
-| `n_workorders_observed` | int | Support — number of historical WOs for this pair. Drives the ML-vs-fallback decision. |
+| `can_produce` | bool | Hard gate. **True** iff the SKU's `container_type` is in the line's allowed set. |
+| `median_speed_uds_per_hour` | float \| null | Median of `wo_master.units_produced / wo_master.productive_hours` for observed pairs; conservative fallback for format-compatible unobserved pairs; null when `can_produce == False`. |
+| `median_oee` | float \| null | Median `wo_master.oee` for observed pairs; conservative fallback for format-compatible unobserved pairs; null when `can_produce == False`. |
+| `n_workorders_observed` | int | Support — number of historical production WOs for this `(sku_id, line_id)`. `0` means the row is format-compatible but fallback-valued. |
 
 ## Capability rules (hard)
 
@@ -35,9 +35,10 @@ A SKU with a `container_type` outside its line's allowed set has
 `can_produce = False` regardless of history.
 
 A SKU with `can_produce = True` from format but `n_workorders_observed == 0` is
-flagged in `ETLResult.warnings` — likely a SKU that *could* run on the line
-but never has. Treat as `can_produce = True` and use the median speed of the
-same SKU on its primary line (with a 10 % penalty) as a conservative default.
+flagged in `ETLResult.warnings` as `capability_format_only`. The ETL fills
+speed/OEE from the same SKU's strongest observed line with a 10 % penalty. If
+that is unavailable, it falls back to the same line/container median, then the
+global median, also with a 10 % penalty.
 
 ## Lineage
 
@@ -59,6 +60,19 @@ skus.csv       ──┘                                   │
   caused by incidents.
 * Round `median_speed_uds_per_hour` to integer cans/hour (the underlying
   measurement precision is way coarser).
+* Preserve support separately: fallback-valued rows keep
+  `n_workorders_observed == 0`.
+
+## Validation
+
+The ETL validates:
+
+* exactly one row per `(sku_id, line_id)`
+* line IDs are only `14`, `17`, `19`
+* `can_produce` matches the hard format rule
+* all `can_produce == True` rows have non-null positive speed/OEE
+* all `can_produce == False` rows have null speed/OEE
+* `sku_id` values all exist in `skus.csv`
 
 ## Used by
 

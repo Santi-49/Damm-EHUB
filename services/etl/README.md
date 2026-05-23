@@ -2,7 +2,7 @@
 
 > Owner: Person 1 · Contracts: [`ETLContract`](../../packages/contracts/module/etl.py),
 > [`DemandBuilderContract`](../../packages/contracts/module/etl.py) ·
-> Status: `wo_master`, `demand`, `skus`, `changeover_costs`, and `wo_changeovers` implemented; remaining MVP products pending
+> Status: `wo_master`, `demand`, `skus`, `line_capability`, `changeover_costs`, and `wo_changeovers` implemented; remaining MVP products pending
 
 This is the **initial bottleneck** of the LineWise pipeline. Until clean
 datasets land in `data/clean/`, neither the optimiser nor the ML model nor the
@@ -22,7 +22,7 @@ documented in [`docs/data/overview.md`](../../docs/data/overview.md):
 | `demand.csv` | [demand.md](../../docs/data/demand.md) | **MVP** | Historical 2025 demand buckets from `wo_master`; default weekly Monday windows. |
 | `skus.csv` | [skus.md](../../docs/data/skus.md) | **MVP** | |
 | `wo_changeovers.csv` | [wo_changeovers.md](../../docs/data/wo_changeovers.md) | **MVP** | Historical transitions: `sku_from -> sku_to`, flags/features, estimated CF time joined from `changeover_costs`. |
-| `line_capability.csv` | [line_capability.md](../../docs/data/line_capability.md) | **MVP** | |
+| `line_capability.csv` | [line_capability.md](../../docs/data/line_capability.md) | **MVP** | Hard line/SKU gate plus median speed/OEE fallback. |
 | `line_calendar.csv` | [line_calendar.md](../../docs/data/line_calendar.md) | **MVP** | |
 | `changeover_costs.csv` | [changeover_costs.md](../../docs/data/changeover_costs.md) | **MVP** | SKU-to-SKU theoretical transition-time table expanded from `Tabla CF Prat`; optimizer edge weights. |
 | `node_cost_train.csv` | [node_cost_train.md](../../docs/data/node_cost_train.md) | post-MVP | |
@@ -115,6 +115,7 @@ make etl
 make etl-wo-master
 make etl-demand
 make etl-skus
+make etl-line-capability
 make etl-changeover-costs
 make etl-wo-changeovers
 

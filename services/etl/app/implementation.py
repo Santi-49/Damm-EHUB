@@ -1,6 +1,7 @@
 """ETL implementation — implements ETLContract + DemandBuilderContract.
 
-Status: wo_master, skus, changeover_costs and wo_changeovers complete.
+Status: wo_master, demand, skus, line_capability, changeover_costs and
+wo_changeovers complete.
 Other products are stubs.
 """
 from __future__ import annotations
@@ -15,6 +16,7 @@ from packages.contracts.module.schemas import DemandBucket, Source, WindowConfig
 
 from .demand import build_historical_demand, buckets_to_dataframe, dataframe_to_buckets
 from .joins.changeover_costs import build_changeover_costs
+from .joins.line_capability import build_line_capability
 from .joins.skus import build_skus
 from .joins.wo_changeovers import build_wo_changeovers
 from .joins.wo_master import build_wo_master
@@ -90,6 +92,12 @@ def _build_sync(raw_dir: Path, out_dir: Path) -> ETLResult:
     rows_per_table["skus"] = len(skus)
     all_warnings.extend(skus_warnings)
 
+    # ── line_capability ──────────────────────────────────────────────────────
+    line_capability, capability_warnings = build_line_capability(wo_master, skus)
+    line_capability.to_csv(out_dir / "line_capability.csv", index=False)
+    rows_per_table["line_capability"] = len(line_capability)
+    all_warnings.extend(capability_warnings)
+
     # ── changeover_costs ─────────────────────────────────────────────────────
     cf_tables = parse_cf_prat(raw_dir / "Tabla CF Prat 2026_14_17_19.xlsx")
     changeover_costs, cost_warnings = build_changeover_costs(skus, cf_tables)
@@ -108,7 +116,7 @@ def _build_sync(raw_dir: Path, out_dir: Path) -> ETLResult:
 
     # ── stubs for remaining MVP products ─────────────────────────────────────
     for product in (
-        "line_capability", "line_calendar",
+        "line_calendar",
     ):
         all_warnings.append(f"not_implemented: {product}.csv not yet produced")
 

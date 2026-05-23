@@ -20,6 +20,7 @@ Both must appear in `ETLResult.discarded_files`.
 | `OEE` + `Tiempo` + `Volumen` + `Mantenimiento` | `OF == WOID` | `wo_master.csv` |
 | `wo_master` production rows | `end_day` bucket + `sku_id` | `demand.csv` |
 | OEE SKU attributes | `drop_duplicates(sku_id)` | `skus.csv` |
+| `wo_master` + `skus` | `(sku_id, line_id)` medians + format rules | `line_capability.csv` |
 | `Tabla CF Prat` + `skus` | SKU attributes and line/container rules | `changeover_costs.csv` |
 | `wo_master` + `skus` + `Cambios` + `changeover_costs` | consecutive production WOs, `wo_to_id`, `(line, sku_from, sku_to)` | `wo_changeovers.csv` |
 
@@ -151,6 +152,9 @@ Expected warning names include:
 * `demand_invalid_end_day`
 * `demand_invalid_units`
 * `skus_attribute_conflict`
+* `capability_format_only`
+* `capability_metric_fallback`
+* `capability_history_violates_format`
 * `changeover_costs_missing_container_type`
 * `changeover_costs_missing_format_pair`
 * `changeover_costs_missing_component`

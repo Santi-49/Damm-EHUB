@@ -6,7 +6,8 @@
 # ─────────────────────────────────────────────────────────────────────
 
 .PHONY: dev stop build migrate makemigration seed generate-types test test-local lint \
-        etl etl-wo-master etl-demand etl-skus etl-changeover-costs etl-wo-changeovers
+        etl etl-wo-master etl-demand etl-skus etl-line-capability \
+        etl-changeover-costs etl-wo-changeovers
 
 RAW_DIR ?= data/raw
 CLEAN_DIR ?= data/clean
@@ -70,6 +71,9 @@ etl-demand:
 etl-skus:
 	python -m services.etl.app.joins.skus --raw $(RAW_DIR) --out $(CLEAN_DIR)
 
+etl-line-capability:
+	python -m services.etl.app.joins.line_capability --raw $(RAW_DIR) --out $(CLEAN_DIR)
+
 etl-changeover-costs:
 	python -m services.etl.app.joins.changeover_costs --raw $(RAW_DIR) --out $(CLEAN_DIR)
 
@@ -93,5 +97,6 @@ help:
 	@echo "  etl-wo-master    Build only data/clean/wo_master.csv"
 	@echo "  etl-demand       Build only data/clean/demand.csv from wo_master.csv"
 	@echo "  etl-skus         Build only data/clean/skus.csv"
+	@echo "  etl-line-capability  Build only data/clean/line_capability.csv"
 	@echo "  etl-changeover-costs  Build only data/clean/changeover_costs.csv"
 	@echo "  etl-wo-changeovers  Build only data/clean/wo_changeovers.csv"

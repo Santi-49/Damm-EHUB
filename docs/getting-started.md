@@ -90,8 +90,8 @@ LineWise depends on confidential Damm Excel exports. Keep all source files under
 ### Source files
 
 The ETL that is implemented today builds `wo_master.csv`, `demand.csv`,
-`skus.csv`, `changeover_costs.csv`, and `wo_changeovers.csv`. It requires
-these files in `data/raw/`:
+`skus.csv`, `line_capability.csv`, `changeover_costs.csv`, and
+`wo_changeovers.csv`. It requires these files in `data/raw/`:
 
 | File | Used for |
 |---|---|
@@ -120,6 +120,7 @@ make etl
 #   data/clean/wo_master.csv
 #   data/clean/demand.csv
 #   data/clean/skus.csv
+#   data/clean/line_capability.csv
 #   data/clean/changeover_costs.csv
 #   data/clean/wo_changeovers.csv
 
@@ -131,6 +132,9 @@ make etl-demand
 
 make etl-skus
 # Rebuilds only data/clean/skus.csv
+
+make etl-line-capability
+# Rebuilds only data/clean/line_capability.csv
 
 make etl-changeover-costs
 # Rebuilds only data/clean/changeover_costs.csv
@@ -145,9 +149,9 @@ To use a different source or output directory:
 make etl RAW_DIR=/path/to/raw CLEAN_DIR=/path/to/clean
 ```
 
-The full ETL currently reports the remaining MVP products
-(`line_capability.csv`, `line_calendar.csv`) as `not_implemented` warnings
-until those joins/parsers are added.
+The full ETL currently reports the remaining MVP product
+(`line_calendar.csv`) as a `not_implemented` warning until that parser is
+added.
 
 ---
 

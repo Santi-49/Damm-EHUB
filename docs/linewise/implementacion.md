@@ -382,7 +382,7 @@ El brief lo pide explícitamente: "Recomendar línea y secuencia". Importante qu
 
 ### 7.1 Restricciones de capability
 
-De `sku_line_capability.csv` extraemos `can_produce(sku, tren) ∈ {True, False}`. Un SKU solo puede ir a una línea donde se haya producido al menos una vez históricamente (regla operativa razonable: si la línea jamás lo ha hecho, no asumimos que pueda).
+De `sku_line_capability.csv` extraemos `can_produce(sku, tren) ∈ {True, False}`. Un SKU puede ir a una línea si su formato está permitido por esa línea; si no hay observación histórica para ese par, se usa velocidad/OEE fallback conservador y `n_workorders_observed = 0`.
 
 ### 7.2 Criterio de preferencia entre líneas factibles
 
