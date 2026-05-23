@@ -1,12 +1,15 @@
-# `changeover_costs.csv` — Fused changeover hours per `(line_id, sku_from_id, sku_to_id)`
+# `changeover_costs.csv` — SKU-to-SKU theoretical transition times
 
 **Status:** MVP · **Produced by:** [`services/etl/`](../../services/etl/) ·
-**Consumers:** optimiser (edge weights), changeover ML (theoretical floor) ·
-**Granularity:** one row per `(line_id, sku_from_id, sku_to_id)` triple that exists in history or in the theoretical matrix
+**Consumers:** optimiser edge weights, `wo_changeovers.csv` estimated-time join ·
+**Granularity:** one row per allowed `(line_id, sku_from_id, sku_to_id)` transition
 
-The single source the optimiser reads for edge weights. Combines theoretical
-values from `Tabla CF Prat` with empirical observations, segmented by which
-component drove the cost so it sums to the total.
+This is the canonical SKU-to-SKU transition-time data product. It expands the
+predefined `Tabla CF Prat 2026_14_17_19.xlsx` rules through `skus.csv`.
+
+`Tabla CF Prat` does not list SKU IDs directly. It gives theoretical durations
+by line, container format, packaging operation and additional change events.
+The ETL derives SKU-pair costs by comparing SKU attributes.
 
 ## Schema
 
@@ -15,70 +18,80 @@ component drove the cost so it sums to the total.
 | `line_id` | int (PK part, 14/17/19) | Line on which the transition takes place. |
 | `sku_from_id` | str (PK part) | Predecessor SKU. |
 | `sku_to_id` | str (PK part) | Successor SKU. |
-| `total_hours` | float | Total changeover hours. `sum(segment_*_hours) == total_hours`. |
-| `segment_brand_hours` | float | Time attributable to a brand change. |
-| `segment_container_hours` | float | Time attributable to a container/format change. |
-| `segment_cap_hours` | float | Time attributable to a cap change. |
-| `segment_primary_pack_hours` | float | Time attributable to a primary packaging change. |
-| `segment_secondary_pack_hours` | float | Time attributable to a secondary packaging change. |
-| `segment_pallet_hours` | float | Time attributable to a pallet-type change. |
-| `segment_product_hours` | float | Time attributable to a product (recipe) change. |
-| `segment_volume_hours` | float | Time attributable to a volume change. |
-| `segment_startup_hours` | float | Constant arranque time per line. |
-| `segment_shutdown_hours` | float | Constant final time per line. |
-| `n_observations` | int | Number of historical transitions of this triple. |
-| `source` | str (`teorico` / `empirico` / `hibrido`) | How the row was produced (see below). |
+| `from_container_type` | str | Predecessor format (`1/2`, `1/3`, `2/5`). |
+| `to_container_type` | str | Successor format. |
+| `total_hours` | float | Estimated transition time. Equals the maximum segment duration on the row. |
+| `segment_container_hours` | float | Format/container change time from `LATA_BARRIL`. |
+| `segment_beer_hours` | float | `Cambio cerveza` time from `Tiempos adicionales`. |
+| `segment_cap_or_label_hours` | float | `Cambio lata` / etiqueta / tapon time when beer does not change. |
+| `segment_primary_pack_hours` | float | `Cambio Packaging` duration. |
+| `segment_secondary_pack_hours` | float | `Cambio a Bandeja` duration. |
+| `segment_pallet_hours` | float | `Cambio Paletizado` duration. |
+| `dominant_component` | str | Segment(s) equal to `total_hours`; semicolon-separated on ties. |
+| `source` | str | Currently always `tabla_cf_prat`. |
 
-## Source-tag semantics
+## Max-Component Rule
 
-| `source` | Meaning |
-|---|---|
-| `teorico` | Pure theoretical value parsed from `Tabla CF Prat`. Used when `n_observations < 5`. |
-| `empirico` | Pure empirical aggregation from history. Used when `n_observations >= 5` and theoretical is unavailable. |
-| `hibrido` | Empirical anchored to the theoretical floor: `total_hours = max(theoretical_total, empirical_median)`. Used when both are present and `n_observations >= 5`. |
+If multiple components need changing, the total cost is the **maximum** of the
+component times, not the sum:
+
+```
+total_hours = max(
+  segment_container_hours,
+  segment_beer_hours,
+  segment_cap_or_label_hours,
+  segment_primary_pack_hours,
+  segment_secondary_pack_hours,
+  segment_pallet_hours,
+)
+```
+
+This encodes the operational assumption that parallel preparation is possible
+and the slowest required component dominates the transition.
 
 ## Lineage
 
 ```
-Tabla CF Prat 2026_14_17_19.xlsx (sheet "LATA_BARRIL")
-   │   parse human duration strings, expand the partial format-pair matrix
-   │   to all SKU pairs by joining via skus.container_type, brand, packaging
-   └──► theoretical rows (source = "teorico")
+Tabla CF Prat 2026_14_17_19.xlsx
+  ├─ sheet LATA_BARRIL
+  │    format pairs: 1/3 <-> 1/2 <-> 2/5
+  │    component rows: Cambio Packaging, Cambio a Bandeja, Cambio Paletizado
+  └─ sheet Tiempos adicionales
+       Cambio cerveza, Cambio lata, CIP, esterilizacion, limpieza, mantenimiento
 
-wo_master.csv + wo_changeovers.csv
-   │   for each (sku_prev_id → sku_curr_id) transition on the same line,
-   │   take wo_changeovers.empirical_changeover_hours (validated against
-   │   wo_master.unplanned_stop_hours), segment by the flag_* columns
-   └──► empirical rows (source = "empirico")
+skus.csv
+  └─ compare from/to SKU attributes
+       container_type, beer, material/container, primary/secondary packaging, pallet
 
-         ┌──────────► fusion: keep max(theoretical, empirical_median)
-         │                    when both exist and n_observations >= 5
-         ▼
-   changeover_costs.csv
+expanded to all allowed line/SKU pairs
+  └─► changeover_costs.csv
 ```
 
-## Cleaning rules applied
+## Coverage Rules
 
-* Parse strings like `"3 h"`, `"30 min"`, `"1 h 15 min"` to decimal hours.
-* The theoretical matrix is keyed by `container_type` pairs, not SKU pairs.
-  Expand to all SKU pairs by joining through `skus.container_type` and adding
-  segment contributions for brand / packaging changes per the CF sheet.
-* The sum-equals-total invariant is enforced post-fusion: if rounding pushes
-  the segment sum away from `total_hours`, the residual is added to
-  `segment_startup_hours` (the noisiest line item).
-* For pairs with 0 historical observations and 0 theoretical entry (genuinely
-  unseen), apply a conservative `total_hours = max_observed_changeover_on_line`
-  and tag `source = "teorico"` with `n_observations = 0`. Warn.
+Allowed line/container pairs:
 
-## Used by
+| Line | Allowed `container_type` |
+|---|---|
+| L14 | `1/2`, `1/3` |
+| L17 | `1/3` |
+| L19 | `1/2`, `1/3`, `2/5` |
 
-* **Optimiser** — `total_hours` is the edge weight in the m-TSP graph for
-  MVP-1 (no ML). Once the ML model is active, `changeover_costs` provides the
-  **floor**: the optimizer clamps `max(theoretical_total, ml_prediction)` so
-  the ML can never predict below the physical minimum.
-* **Changeover ML inference** — fallback for `(line_id, sku_from_id, sku_to_id)`
-  triples the model has never seen in `wo_changeovers.csv`.
+The ETL includes same-SKU rows with `total_hours = 0.0` so historical repeated
+SKU transitions can still join cleanly.
 
-> **NOT a training input.** The changeover ML model trains exclusively on
-> real observations in `wo_changeovers.csv`. Theoretical values from this table
-> must never be mixed into the training set.
+## Cleaning Rules Applied
+
+* Parse strings like `"3 h"`, `"30 min"`, `"1 h 15 min"`, and `"1,5 h"` to
+  decimal hours.
+* `Cambio cerveza` suppresses `Cambio lata` / etiqueta / tapon because the CF
+  note says those changes are included when beer changes.
+* Missing component durations produce warnings. Current raw coverage validates
+  with no missing historical cost joins.
+* Validate that `total_hours == max(segment_*_hours)` for every row.
+
+## Used By
+
+* Optimiser: `total_hours` is the edge weight in the SKU routing graph.
+* [`wo_changeovers.csv`](./wo_changeovers.md): joins the theoretical estimated
+  time onto historical transitions for explanation and diagnostics.

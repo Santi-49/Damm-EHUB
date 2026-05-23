@@ -20,9 +20,9 @@ This is **Architecture D** of the four we considered — full comparison in
 That one sentence wins the storytelling battle vs ILP, greedy, or local-search framings.
 Three properties make it defensible:
 
-1. **ML target is well-bounded** — predicting *changeover time* between two SKUs is a
-   single, observable, easily validatable quantity. Not a composite KPI.
-2. **Clean decoupling** — ML for edges, OR-Tools for routing, simulator for OEE.
+1. **Edge costs are well-bounded** — *changeover time* between two SKUs is a
+   single, explainable quantity derived from CF rules. Not a composite KPI.
+2. **Clean decoupling** — edge costs for routing, OR-Tools for sequencing, simulator for OEE.
    Each component has one job and is independently testable.
 3. **Drop-out is native** — when capacity is short (breakdown, urgent demand), OR-Tools
    VRP supports *disjunctions with penalty*: each demand node is optional and the solver
@@ -47,8 +47,8 @@ Three properties make it defensible:
    `demand` at weekly granularity).
 2. **Graph optimiser** (Arch D, OR-Tools VRP) that distributes SKUs across L14/L17/L19
    respecting format constraints, finds the cheapest path per line, and minimises makespan.
-3. **ML changeover predictor** that estimates edge weights from history, with theoretical
-   matrix as floor for rare pairs.
+3. **SKU-to-SKU changeover matrix** that estimates edge weights from `Tabla CF Prat`,
+   with transparent segment breakdowns and the max-component rule.
 4. **Deterministic simulator** that takes a proposed sequence and computes OEE while
    replaying real incidents — so `S_opt` vs `S_real` is a fair fight.
 5. **Interactive UI** — Gantt per line, drill-down `week → day → transition`, drag to

@@ -1,21 +1,22 @@
 """ETL implementation — implements ETLContract + DemandBuilderContract.
 
-Status: wo_master pipeline complete (M1).  Other products are stubs.
+Status: wo_master, skus, changeover_costs and wo_changeovers complete.
+Other products are stubs.
 """
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 
-from packages.contracts.module.etl import (
-    DemandBuilderContract,
-    ETLContract,
-    ETLResult,
-)
+from packages.contracts.module.etl import ETLResult
 from packages.contracts.module.schemas import DemandBucket, Source, WindowConfig
 
+from .joins.changeover_costs import build_changeover_costs
 from .joins.skus import build_skus
+from .joins.wo_changeovers import build_wo_changeovers
 from .joins.wo_master import build_wo_master
+from .parsers.cambios import parse_cambios
+from .parsers.cf_prat import parse_cf_prat
 from .parsers.mantenimiento import parse_mantenimiento
 from .parsers.oee import parse_oee
 from .parsers.tiempo import parse_tiempo
@@ -75,10 +76,25 @@ def _build_sync(raw_dir: Path, out_dir: Path) -> ETLResult:
     rows_per_table["skus"] = len(skus)
     all_warnings.extend(skus_warnings)
 
+    # ── changeover_costs ─────────────────────────────────────────────────────
+    cf_tables = parse_cf_prat(raw_dir / "Tabla CF Prat 2026_14_17_19.xlsx")
+    changeover_costs, cost_warnings = build_changeover_costs(skus, cf_tables)
+    changeover_costs.to_csv(out_dir / "changeover_costs.csv", index=False)
+    rows_per_table["changeover_costs"] = len(changeover_costs)
+    all_warnings.extend(cost_warnings)
+
+    # ── wo_changeovers ───────────────────────────────────────────────────────
+    cambios_df = parse_cambios(raw_dir / "Cambios 14_17_19_ 2025.xlsx")
+    wo_changeovers, changeover_warnings = build_wo_changeovers(
+        wo_master, skus, cambios_df, changeover_costs
+    )
+    wo_changeovers.to_csv(out_dir / "wo_changeovers.csv", index=False)
+    rows_per_table["wo_changeovers"] = len(wo_changeovers)
+    all_warnings.extend(changeover_warnings)
+
     # ── stubs for remaining MVP products ─────────────────────────────────────
     for product in (
-        "wo_changeovers", "line_capability",
-        "line_calendar", "changeover_costs",
+        "line_capability", "line_calendar",
     ):
         all_warnings.append(f"not_implemented: {product}.csv not yet produced")
 

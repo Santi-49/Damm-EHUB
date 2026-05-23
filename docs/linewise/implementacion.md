@@ -27,7 +27,7 @@ horas_productivas_efectivas = horas_totales_slot
 
 Todos los términos del denominador y numerador salen de tablas estáticas:
 - `speed_median(sku, tren)` ← `executed_runs` agregado.
-- `changeover_matrix(sku_from, sku_to, tren)` ← teórico + empírico fusionados.
+- `changeover_matrix(sku_from, sku_to, tren)` ← `Tabla CF Prat` expandida a SKU→SKU.
 - `calendar_constraints` ← regla viernes/lunes.
 - `incident_log` ← replay determinista por (tren, instante) (ver `reto.md` §3).
 
@@ -97,7 +97,7 @@ Sin esta dualidad, el optimizador podría "ganar" produciendo menos pero con OEE
 - Aplicado a `S_opt` usa los mismos incidentes y reglas → comparación justa.
 
 **Realismo cubierto**:
-- ✅ Cambios entre SKUs (matriz teórica + empírica).
+- ✅ Cambios entre SKUs (matriz teórica CF expandida; total = máximo de componentes).
 - ✅ Limpieza obligatoria (viernes 8 h).
 - ✅ Mantenimiento obligatorio (lunes quincenal 8 h).
 - ✅ Averías históricas (replay determinista).
@@ -201,9 +201,9 @@ Sin esta dualidad, el optimizador podría "ganar" produciendo menos pero con OEE
 - El modelo ML hay que entrenarlo y validarlo (walk-forward).
 - Riesgo de inconsistencia entre OEE predicho por ML y OEE simulado determinista (mitigable con un ratio de validación).
 
-### Arquitectura D — **Grafo / pathfinding con aristas predichas por ML**
+### Arquitectura D — **Grafo / pathfinding con aristas SKU→SKU**
 
-**Idea**: modelar la planificación como un problema de **m-TSP** (varios viajantes — uno por línea) sobre un grafo de SKUs/chunks. ML predice solo el peso de las aristas (tiempo de cambio entre SKUs). El optimizador minimiza tiempo total. El OEE no se predice — solo se simula post-hoc sobre la solución encontrada.
+**Idea**: modelar la planificación como un problema de **m-TSP** (varios viajantes — uno por línea) sobre un grafo de SKUs/chunks. El peso de las aristas es el coste SKU→SKU de `changeover_costs.csv`, derivado de `Tabla CF Prat`. El optimizador minimiza tiempo total. El OEE no se predice — solo se simula post-hoc sobre la solución encontrada.
 
 **Justificación matemática**:
 
@@ -221,21 +221,21 @@ OEE_semana = uds_buenas / (uds_buenas × velocidad⁻¹ + tiempo_cambios + overh
 | **Nodo** | Un chunk de demanda `(sku, uds_chunk, tren_candidato)`. Un SKU grande se parte en varios chunks (e.g., máx 8 h productivas cada uno). También nodos sintéticos para `inicio_línea`, `fin_línea`, `limpieza_obligatoria`, `mantenimiento_obligatorio` |
 | **Peso del nodo** | `run_time(sku, tren) = uds_chunk / speed_median(sku, tren) + expected_overhead` |
 | **Arista (a → b)** | Posibilidad de hacer el chunk `b` justo después del `a` en la misma línea |
-| **Peso de arista** | `changeover_time(sku_a, sku_b, tren)` ← **target de ML** |
+| **Peso de arista** | `changeover_time(sku_a, sku_b, tren)` ← `changeover_costs.csv` |
 | **Path por línea** | Una secuencia de nodos visitada por esa línea de inicio_línea a fin_línea |
 | **Restricciones globales** | Cada nodo de demanda se visita por **exactamente una** línea (cobertura). Las líneas no se solapan en chunks |
 
 **Algoritmo**:
 
 1. **Construir el grafo**: enumerar todos los chunks factibles `(sku, tren)` según `sku_line_capability`. Insertar nodos forzados de limpieza/mantenimiento en sus posiciones temporales.
-2. **Predecir aristas con ML**: entrenar modelo (gradient boosting o red simple) con target `changeover_time` y features `(sku_from, sku_to, tren, día_semana, hora_día, atributos SKU from/to)`. Datos: derivar `changeover_time` empírico desde `PNP` previo a marcha en `executed_runs` ordenado, con fallback al teórico de `Tabla CF Prat`.
+2. **Cargar aristas**: leer `changeover_costs.csv`, donde cada `(tren, sku_from, sku_to)` tiene un coste teórico expandido desde `Tabla CF Prat`. Si cambian varios componentes, el coste es el máximo de sus duraciones.
 3. **Resolver m-TSP**: OR-Tools `RoutingModel` (VRP). Tres "vehículos" (uno por línea), cada uno con capacidad temporal = horas disponibles_semana. Objetivo: minimizar **makespan** (`max(tiempo_línea_14, tiempo_línea_17, tiempo_línea_19)`) + ε · suma_total. Restricciones duras: cobertura, capability, eventos forzados de calendario.
 4. **Simular el resultado**: pasar la solución al simulador determinista. Aplicar replay de incidentes. Reportar OEE y métricas estándar.
 
 **Por qué es elegante para este reto**:
 
 - **Storytelling perfecto**: "encontramos el camino más corto que recorre todos tus pedidos sin repetir cambios caros". Concepto intuitivo para no técnicos.
-- **ML acotado y validatable**: la tarea es predecir un tiempo de cambio, no un KPI compuesto. Más fácil de entrenar bien y de explicar (SHAP sobre features de cambio es muy interpretable).
+- **Coste acotado y validatable**: la tarea es explicar un tiempo de cambio, no un KPI compuesto. Las aristas salen de reglas CF transparentes y auditables.
 - **Decoupling limpio**: ML para aristas, simulador para OEE. Cada componente tiene una responsabilidad clara y validable independientemente.
 - **Maduro algorítmicamente**: OR-Tools tiene VRP listo. No hay que inventar nada.
 - **Captura naturalmente la asignación de línea**: tres "viajantes" (uno por línea), demanda repartida. La distribución entre líneas emerge de la optimización, no es una decisión separada.
@@ -243,7 +243,7 @@ OEE_semana = uds_buenas / (uds_buenas × velocidad⁻¹ + tiempo_cambios + overh
 
 **Caveats a vigilar**:
 
-- La arista debe incluir todo el tiempo "entre productivo y productivo": cambio + arranque/final si aplica. Documentar exactamente qué entra y qué no.
+- La arista incluye el cambio SKU→SKU. Arranque/final son costes de frontera o calendario, no se suman automáticamente a cada transición.
 - El número de chunks crece con la demanda → grafos de cientos de nodos por semana. Manejable, pero auditar tamaño y latencia.
 - La métrica `makespan` no es lo mismo que `Σ tiempos`. Si dos líneas acaban a las 18h y una a las 23h, el makespan = 23h. Conviene reportar las dos.
 - Predecir `changeover_time` con ML solo aporta cuando hay observaciones suficientes para ese par. Para pares raros, fallback al teórico de la matriz CF.

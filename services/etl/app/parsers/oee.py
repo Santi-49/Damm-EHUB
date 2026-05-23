@@ -8,7 +8,7 @@ Column mapping (Spanish → English):
     OF                              → wo_id
     TREN                            → line_id
     SKU                             → sku_id
-    Fecha Fin                       → end_ts
+    Fecha Fin                       → end_ts  (date-only in the raw export)
     H. Tot.                         → total_hours
     OEE                             → oee
     Disponibilidad                  → availability
@@ -86,6 +86,7 @@ def parse_oee(path: Path) -> pd.DataFrame:
                 require_col(raw, candidates, label=f"oee→{target}")  # raises
 
     df = raw.rename(columns=rename)
+    df["source_row_order"] = range(len(df))
 
     # Drop constant columns (match case-insensitively)
     drop_actual = [c for c in df.columns if c in _DROP_COLS]

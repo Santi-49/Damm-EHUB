@@ -2,7 +2,7 @@
 
 > Owner: Person 1 · Contracts: [`ETLContract`](../../packages/contracts/module/etl.py),
 > [`DemandBuilderContract`](../../packages/contracts/module/etl.py) ·
-> Status: skeleton
+> Status: `wo_master`, `skus`, `changeover_costs`, and `wo_changeovers` implemented; remaining MVP products pending
 
 This is the **initial bottleneck** of the LineWise pipeline. Until clean
 datasets land in `data/clean/`, neither the optimiser nor the ML model nor the
@@ -20,10 +20,10 @@ documented in [`docs/data/overview.md`](../../docs/data/overview.md):
 |---|---|---|---|
 | `wo_master.csv` | [wo_master.md](../../docs/data/wo_master.md) | **MVP** | |
 | `skus.csv` | [skus.md](../../docs/data/skus.md) | **MVP** | |
-| `wo_changeovers.csv` | [wo_changeovers.md](../../docs/data/wo_changeovers.md) | **MVP** | Transition master: `sku_from → sku_to`, empirical `changeover_hours`, features. ML training source. |
+| `wo_changeovers.csv` | [wo_changeovers.md](../../docs/data/wo_changeovers.md) | **MVP** | Historical transitions: `sku_from -> sku_to`, flags/features, estimated CF time joined from `changeover_costs`. |
 | `line_capability.csv` | [line_capability.md](../../docs/data/line_capability.md) | **MVP** | |
 | `line_calendar.csv` | [line_calendar.md](../../docs/data/line_calendar.md) | **MVP** | |
-| `changeover_costs.csv` | [changeover_costs.md](../../docs/data/changeover_costs.md) | **MVP** | Theoretical floor — optimizer only, NOT training data. |
+| `changeover_costs.csv` | [changeover_costs.md](../../docs/data/changeover_costs.md) | **MVP** | SKU-to-SKU theoretical transition-time table expanded from `Tabla CF Prat`; optimizer edge weights. |
 | `node_cost_train.csv` | [node_cost_train.md](../../docs/data/node_cost_train.md) | post-MVP | |
 | `incidents.csv` | [incidents.md](../../docs/data/incidents.md) | M2 (simulator) | |
 
@@ -57,6 +57,27 @@ See [`docs/data/demand.md`](../../docs/data/demand.md) for the mapping per sourc
 > source to time-windowed `DemandBucket`s with `line_id / day / turn`
 > deliberately dropped; window size comes from `WindowConfig`.
 
+## Mandatory validation
+
+Every ETL output must be validated with Python before it is considered done.
+A successful `make etl` run only proves that the CSV was written; it does not
+prove the data is correct.
+
+For each produced CSV, run a Python validation script (inline is fine while
+exploring; commit reusable validators once they stabilize) that checks at least:
+
+- Schema: exact column names, required columns present, expected dtypes.
+- Keys: primary-key uniqueness, foreign-key joins to upstream clean tables.
+- Missing data: null counts in required fields and suspicious empty strings.
+- Ranges/enums: hour bounds, booleans, line IDs, SKU formats, timestamps.
+- Outliers: documented thresholds from `docs/data/cleaning_rules.md`.
+- Lineage: row counts reconcile with the raw source and documented filters.
+- Round-trip: generated CSV can be read back and still matches the builder output.
+
+Validation summaries must be reported alongside the ETL change: row counts,
+PASS/FAIL checks, and the main warning/outlier counts. Do not hand-wave this
+with visual inspection in Excel.
+
 ## Skeleton
 
 ```
@@ -76,6 +97,7 @@ services/etl/
 ## Definition of done
 
 - [ ] All seven MVP CSVs land in `data/clean/` and pass schema checks (`wo_master`, `skus`, `wo_changeovers`, `line_capability`, `line_calendar`, `changeover_costs`, `demand`).
+- [ ] Each implemented CSV has been validated with a Python script for schema, keys, missing values, ranges, outliers, lineage, and CSV round-trip.
 - [ ] `ETLResult.warnings` surfaces every documented data-quality flag (catalogue in [`cleaning_rules.md`](../../docs/data/cleaning_rules.md) §11).
 - [ ] Discarded files appear in `ETLResult.discarded_files`.
 - [ ] `build_demand("historico_2025", clean_dir, window=WindowConfig(days=7))` returns a non-empty tuple and round-trips through `to_csv`.
@@ -91,6 +113,8 @@ make etl
 # Rebuild individual implemented products
 make etl-wo-master
 make etl-skus
+make etl-changeover-costs
+make etl-wo-changeovers
 
 # Use custom directories
 make etl RAW_DIR=/path/to/raw CLEAN_DIR=/path/to/clean

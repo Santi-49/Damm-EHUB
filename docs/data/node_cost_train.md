@@ -20,8 +20,8 @@ equivalently effective speed) given the SKU, the line, and contextual features.
 | `wo_id` | str (PK, FK → `wo_master.wo_id`) | Reference WO. |
 | `sku_id` | str | Joined from `wo_master`. |
 | `line_id` | int (14/17/19) | Joined from `wo_master`. |
-| `start_ts` | timestamp | Joined from `wo_master`. |
-| `end_ts` | timestamp | Joined from `wo_master`. |
+| `end_day` | date | Joined from `wo_master`. Date-only historical granularity. |
+| `line_sequence_order` | int | Joined from `wo_master` for within-line ordering. |
 | **Features** ↓ | | |
 | `container_type` | str | From `skus`. |
 | `brand` | str | From `skus`. |
@@ -32,8 +32,7 @@ equivalently effective speed) given the SKU, the line, and contextual features.
 | `secondary_packaging` | str | From `skus`. |
 | `pallet_type` | str | From `skus`. |
 | `units_per_case` | float | From `skus`. |
-| `day_of_week` | int (0..6) | Derived from `start_ts`. |
-| `hour_of_day` | int (0..23) | Derived from `start_ts`. |
+| `day_of_week` | int (0..6) | Derived from `end_day`. |
 | `is_weekend` | bool | Derived. |
 | `same_sku_as_prev` | bool | Whether the previous WO on this line had the same SKU. |
 | `hours_since_last_cleaning` | float | Derived from `line_calendar`. |
@@ -48,9 +47,9 @@ equivalently effective speed) given the SKU, the line, and contextual features.
 
 ```
 wo_master.csv ─┐
-                ├──► join on sku_id and on (line_id, start_ts)
+                ├──► join on sku_id and line sequence
 skus.csv      ─┤              ↑
-                │              compute day_of_week, hour_of_day,
+                │              compute day_of_week,
                 │              same_sku_as_prev, cumulative_run_hours_today,
                 │              hours_since_last_cleaning
                 ▼

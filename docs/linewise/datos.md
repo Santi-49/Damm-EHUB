@@ -12,7 +12,7 @@
 | **Pedidos / Demanda** | `Planificado - producciones 14 - 17 - 19.XLSX` (única fuente real) — `Diario Hl_Planif.xlsx` descartado | Día × turno × línea × SKU, **solo semana 18–24 may 2026** | Único input de demanda. Se reagrega a buckets semanales antes de entrar al optimizador |
 | **Producción real (histórico)** | `OEE 14_17_19_ 2025.xlsx` ≡ `data - 2026-05-18….xlsx`, `Volumen…`, `Tiempo…`, `Mantenimiento…` | 1 fila = 1 WO terminado (2025-01 a 2025-12) | Qué pasó realmente: OEE, UDS, HL, descomposición temporal, mantenimiento |
 | **Producción real (ventana demo)** | `Produccion_L14,17,19_18-22.xlsx` | 1 fila = 1 WO terminado (18–21 may 2026) | Realidad de la semana planificada (comparación final con la recomendación) |
-| **Costes de transición** | `Tabla CF Prat 2026_14_17_19.xlsx` (hoja `LATA_BARRIL`), `Cambios 14_17_19_ 2025.xlsx` | Matriz por línea (teórico) + flags por OF (empírico) | Coste en horas de cambiar de un formato/SKU a otro |
+| **Costes de transición** | `Tabla CF Prat 2026_14_17_19.xlsx` (hoja `LATA_BARRIL` + `Tiempos adicionales`) | Matriz por línea expandida a SKU→SKU | Coste teórico en horas de cambiar de un formato/SKU a otro |
 | **Limpieza / mantenimiento** | `Tabla CF Prat 2026…` (hoja `Tiempos adicionales`) + filas con `SKU = LIMPIEZA` o `OF "PRT…-M"` | Calendario teórico + ejecución histórica | Restricciones de calendario y huecos forzados |
 | **Catálogo SKU** | Columnas de producto en `OEE…` (Marca, Familia, Cerveza, Envase, Tipo Envase, Mat. Precio, Packaging…) | 1 fila = 1 WO, pero útil como lookup SKU → atributos | Para definir compatibilidades, features de cambio, y matriz de cambio |
 
@@ -33,7 +33,7 @@
 | Columna | Tipo | Rol | Notas |
 |---|---|---|---|
 | `OF` | str | ✅ PK | Único. WOs reales empiezan con `0000…-1`; los `PRT…-M` son mantenimientos/limpiezas o ajustes manuales |
-| `Fecha Fin` | datetime | ✅ ordenar secuencia | **No hay Fecha Inicio**: se infiere con `Fecha Fin - H. Tot.` |
+| `Fecha Fin` | date | ✅ ordenar secuencia | Tiene granularidad de día; no hay hora real ni `Fecha Inicio` canónica |
 | `SKU` | str | ✅ nodo del grafo | 170 únicos. Incluye `"LIMPIEZA"` como pseudo-SKU |
 | `TREN` | float | ✅ partición línea | 14 / 17 / 19 |
 | `OEE` | float | ✅ métrica principal | Mean 0.49, max 1.57 (Rend > 1 puntual). NaN en LIMPIEZA |
@@ -121,7 +121,7 @@
 
 > Es la **fuente teórica** de costes. La pareja "matriz teórica + histórico real" permite detectar cambios ineficientes.
 
-### 1.6 `Cambios 14_17_19_ 2025.xlsx` — **Histórico empírico de transiciones por WO**
+### 1.6 `Cambios 14_17_19_ 2025.xlsx` — **Flags históricos de transiciones por WO**
 
 - Forma: **2.181 × 22** (137 WOs sin entrada — coinciden con LIMPIEZA y algunos mantenimientos).
 - Llave: `OF` (la WO de destino, *después* del cambio).
@@ -130,14 +130,15 @@
 |---|---|
 | `OF`, `Fecha Fin`, `SKU` | ✅ PK + destino |
 | `Nº de Cambios` | ✅ nº componentes que cambiaron al entrar a este WO |
-| `Frecuencia Total` | ⚠️ mean 1.65, max 17.5 — magnitud parece horas, nombre ambiguo. Tratada como horas empíricas con validación cruzada (ver §6) |
+| `Frecuencia Total` | ⚠️ Campo diagnóstico. Mentores indicaron que no debe usarse como target principal de tiempo de cambio. |
 | `C. PRINCIPAL` | ✅ tipo principal: `Contenido`, `Marca`, `Pack, Primario`, `Pack. Secundario`, `Palet`, `Referencia`, `Tapa/Tapón`, `Volumen Envase` |
 | `C. Brand`, `C. CAP`, `C. Envase`, `C. Palet`, `C. Primario`, `C. Producto`, `C. Secundario`, `C. Volum` | ✅ flags binarios (0/1; algún outlier en Brand) por componente |
 | `Marca`, `Familia`, `Cerveza`, `Material Precio`, `Envase`, `Tipo Envase` | ⚪ atributos SKU destino |
 | `CENTRO`, `Columna Blanca` | ❌ |
 
 > **No tiene `TREN`** — siempre join con OEE vía `OF` para conocer la línea.
-> Es esencial para construir la **matriz empírica de transiciones**.
+> Es esencial para construir los **flags históricos de transición**. Los tiempos
+> SKU→SKU vienen de `Tabla CF Prat` expandida por atributos SKU.
 
 ### 1.7 `Planificado - producciones 14 - 17 - 19.XLSX` — **Plan teórico semana 18-24 may 2026**
 
@@ -204,7 +205,7 @@
                        │  executed_runs           │  ← join OEE+Tiempo+Volumen+Mant. por OF
                        │  (of PK)                 │
                        │  sku, tren, fecha_fin,   │
-                       │  fecha_ini (derivada),   │
+                       │  orden_linea,            │
                        │  h_tot, t_marcha,        │
                        │  t_paro, t_baja_vel,     │
                        │  t_limpieza, t_cip,      │
@@ -220,7 +221,7 @@
                        │  (of PK)                 │
                        │  c_principal, n_cambios, │
                        │  c_brand…c_volum,        │
-                       │  frecuencia_total ⚠      │
+                       │  frecuencia_total ⚠ diag │
                        └──────────────────────────┘
 ```
 
@@ -232,13 +233,13 @@
 | `changes_actual` | Cambios | `OF` (137 WOs sin cambio asociado → LIMPIEZA/M) |
 | `sku_master` | OEE (drop_duplicates por SKU) | — |
 | `changeover_matrix_theoretical` | Tabla CF (`LATA_BARRIL` + `Tiempos adicionales`) | parseo manual |
-| `changeover_matrix_empirical` | `executed_runs` ordenado por TREN+Fecha Fin → calcular transición `(sku_prev → sku_actual)` y cruzar con `changes_actual.frecuencia_total` y `Tiempo.PNP` previo al inicio de marcha | — |
+| `changeover_matrix_theoretical_expanded` | `Tabla CF Prat` expandida a `(tren, sku_prev, sku_actual)` mediante atributos SKU. Si cambian varios componentes, coste = máximo de componentes | — |
 | `orders` semana 2026 | `Planificado…` (limpieza de unidades) | — |
 | `weekly_actual` semana 2026 | `Produccion_L14,17,19_18-22.xlsx` | (subconjunto de executed_runs en 2026) |
 
 ### 2.2 Transformaciones críticas a documentar en código
 
-1. **Derivar `fecha_ini` de cada WO**: ordenar por `(TREN, Fecha Fin)` y restar `H. Tot.` o tomar el `Fecha Fin` del WO anterior + tiempo de cambio.
+1. **No derivar timestamps reales**: `Fecha Fin` tiene granularidad de día. Ordenar por `(TREN, Fecha Fin, orden fuente)` y guardar `line_sequence_order`.
 2. **Normalizar unidades del plan**: `Cntd plan` × `Unidad/caja` cuando `Unidad medida base == "CAJ"`.
 3. **Convertir strings de la matriz CF** a horas (`"1 h 15 min"` → 1.25 h).
 4. **Identificar tipo de evento por OF**: `OF.startswith("PRT") and SKU == "LIMPIEZA"` → evento de limpieza; `OF.startswith("PRT")` con SKU real → re-ejecución de producción manual; resto → WO normal.
@@ -264,7 +265,7 @@
 |---|---|---|
 | `demand.csv` | **Demanda** (interfaz única, schema fijo) | variable |
 | `sku_line_capability.csv` | Qué SKUs puede producir cada línea + velocidad y OEE medianos por (sku, tren) | ~170 × 3 ≈ 510 |
-| `changeover_matrix.csv` | Coste en horas para pasar de `sku_from` a `sku_to` en una línea. Fusión teórico + empírico | variable |
+| `changeover_matrix.csv` | Coste teórico en horas para pasar de `sku_from` a `sku_to` en una línea. Derivado de `Tabla CF Prat`; total = máximo de componentes | variable |
 | `calendar_constraints.csv` | Eventos fijos por línea (limpieza viernes 8 h, mantenimiento lunes quincenal 8 h, etc.) | reglas |
 | `optimizer_hyperparams.yaml` | Hiperparámetros del optimizador | — |
 
@@ -283,8 +284,8 @@
 1. **`data - 2026-05-18….xlsx` es duplicado** de `OEE 14_17_19_ 2025.xlsx`. Verificado por OF y valores. **No usar como fuente independiente.**
 2. **Calidad ≡ 1** en el dataset 2025 (todas las filas no-LIMPIEZA). En la práctica solo optimizamos A × P.
 3. **OEE > 1 en algunos WO** (max 1.57): el rendimiento puede superar 1 porque la velocidad teórica está conservadora. Mantener tal cual y reportar P50/P95.
-4. **`Frecuencia Total` en `Cambios.xlsx`**: magnitud parece horas, nombre ambiguo. Validar por correlación con `PNP`; fallback al teórico si no correlaciona.
-5. **No tenemos `Fecha Inicio` explícita** por WO — la inferimos. Puede introducir solapes con limpiezas: investigar.
+4. **`Frecuencia Total` en `Cambios.xlsx`**: no usar como target de tiempo de cambio; conservar solo como diagnóstico.
+5. **No tenemos `Fecha Inicio` explícita** por WO — no inferirlo como dato canónico. Para secuencia usar orden fuente + fecha.
 6. **`H. Tot.` máximo 21065 h** (≈ 877 días) — outlier evidente. Filtrar/clip antes de modelar.
 7. **WOs `PRT…-M`** no son siempre mantenimiento. Regla: `PRT*-M ∧ SKU=LIMPIEZA → limpieza`; resto → re-ejecuciones de producción.
 8. **`Cambios` no tiene `TREN`** → siempre llegar a la línea vía `OEE.OF`.
@@ -303,14 +304,14 @@
 
 | Ambigüedad | Decisión | Justificación |
 |---|---|---|
-| Significado de `Frecuencia Total` en `Cambios.xlsx` | **Tratar como horas de cambio empíricas**. Validar correlación con `PNP`. Si débil, **ignorar** y usar match teórico + `Tiempo Máquina en paro` | Magnitudes (mean 1.65 h, max 17.5 h) son compatibles con horas |
+| Significado de `Frecuencia Total` en `Cambios.xlsx` | **No usar como target principal**; conservar como diagnóstico. El tiempo de cambio MVP sale de `Tabla CF Prat` expandida a SKU→SKU | Alineado con feedback de mentores |
 | `OEE > 1` y `Ineficiencia < 0` | **Mantener tal cual sin capar**. Reportar P50 y P95 | Capar destruye información de mejora real |
 | Falta de **velocidad estándar por SKU** | Derivada del histórico: `velocidad_efectiva(sku, línea) = mediana(UDS / Tiempo Máquina en Marcha)` | Velocidad real observada, mejor que un teórico ausente |
-| Falta de **`Fecha Inicio`** | Derivada como `Fecha Fin - H. Tot.` con ajustes para no solapar el WO anterior | Suficiente para Gantt aproximada y para sumar cambios |
+| Falta de **`Fecha Inicio`** | No se crea como campo canónico. Usar `end_day` + `line_sequence_order`; cualquier Gantt debe marcarse como estimado | Evita falsos timestamps |
 | `Tiempo Operativo Neto` vs `Tiempo Operativo Neto2` | **Usar `Tiempo Máquina en Marcha`** y descartar las dos columnas Neto | Es la columna con interpretación operativa más clara |
 | **No hay demanda histórica real** | **Producción real 2025 ≡ demanda 2025**. Agregamos UDS por (SKU, semana) → input del post-mortem | Permite back-testing sin inventar datos |
 | `Calidad ≡ 1` | Asumimos calidad ya descontada aguas arriba. **No optimizamos Q** | Comportamiento consistente en 2.274 WOs |
-| Falta de **tabla maestra de packaging→tiempo** | Parseo manual de `Tabla CF Prat`. Donde el Excel no aplica → mediana empírica de la transición | Fallback automático |
+| Falta de **tabla maestra SKU→SKU directa** | Parseo manual de `Tabla CF Prat` y expansión por atributos SKU. Donde cambien varios componentes, usar el máximo | Cubre todos los pares permitidos actuales |
 | WOs `PRT…-M` con SKU real | Tratarlos como WOs de producción normales. Solo `SKU=LIMPIEZA` es especial | Sus métricas son comparables |
 | Definición exacta de **Disponibilidad** | `Disponibilidad = Tiempo Máquina en Marcha / H. Tot.` y validar contra columna provista. Si difiere, usar la provista | Pragmático |
 | **Matriz de beneficio por SKU** | Hiperparámetro de usuario en la UI. Default = todos iguales | Permite el caso "priorizar SKUs rentables" sin requerir info comercial |

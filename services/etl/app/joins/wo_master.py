@@ -2,7 +2,7 @@
 
 Steps (per cleaning_rules.md):
   1. Left-join OEE ← Tiempo ← Volumen ← Mantenimiento on wo_id
-  2. Derive start_ts = end_ts - total_hours, clamped to prev WO end_ts per line
+  2. Preserve date-only end_day and raw/source sequence ordering
   3. Classify wo_kind (production / cleaning / maintenance_or_rerun)
   4. Emit warnings for outliers (see catalogue in cleaning_rules §11)
   5. Select the final wo_master column set and write to out_path
@@ -21,7 +21,7 @@ import pandas as pd
 
 WO_MASTER_COLS = [
     "wo_id", "line_id", "sku_id",
-    "start_ts", "end_ts", "total_hours",
+    "end_day", "source_row_order", "line_sequence_order", "total_hours",
     "productive_hours", "downtime_hours",
     "unplanned_stop_hours", "idle_hours", "low_speed_hours",
     "cleaning_hours", "cip_hours", "sterilization_hours",
@@ -66,26 +66,14 @@ def build_wo_master(
             f"(check for duplicate wo_id in Tiempo/Volumen/Mantenimiento)"
         )
 
-    # ── 2. start_ts derivation ───────────────────────────────────────────────
-    df = df.sort_values(["line_id", "end_ts"]).reset_index(drop=True)
+    # ── 2. Date-only timing + sequence ordering ─────────────────────────────
+    if "source_row_order" not in df.columns:
+        df["source_row_order"] = range(len(df))
+        warnings.append("wo_master_source_row_order_missing: rebuilt from joined row order")
 
-    hours_td = pd.to_timedelta(df["total_hours"].clip(lower=0), unit="h")
-    df["start_ts"] = df["end_ts"] - hours_td
-
-    # Clamp: start_ts must not precede the previous WO's end_ts on the same line
-    prev_end = df.groupby("line_id", sort=False)["end_ts"].shift(1)
-    needs_clamp = df["start_ts"] < prev_end
-    clamp_delta = (prev_end - df["start_ts"]).where(needs_clamp)
-
-    df.loc[needs_clamp, "start_ts"] = prev_end[needs_clamp]
-
-    large_clamp = clamp_delta > pd.Timedelta(minutes=10)
-    for idx in df.index[large_clamp]:
-        row = df.loc[idx]
-        warnings.append(
-            f"start_ts_clamp_large: wo_id={row['wo_id']}, "
-            f"adj={clamp_delta[idx]}"
-        )
+    df["end_day"] = pd.to_datetime(df["end_ts"], errors="coerce").dt.strftime("%Y-%m-%d")
+    df = df.sort_values(["line_id", "end_day", "source_row_order", "wo_id"]).reset_index(drop=True)
+    df["line_sequence_order"] = df.groupby("line_id", sort=False).cumcount() + 1
 
     # ── 3. wo_kind classification ────────────────────────────────────────────
     df["wo_kind"] = _classify_wo_kind(df)

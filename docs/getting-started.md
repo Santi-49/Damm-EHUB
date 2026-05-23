@@ -89,8 +89,9 @@ LineWise depends on confidential Damm Excel exports. Keep all source files under
 
 ### Source files
 
-The ETL that is implemented today builds `wo_master.csv` and `skus.csv`. It
-requires these four files in `data/raw/`:
+The ETL that is implemented today builds `wo_master.csv`, `skus.csv`,
+`changeover_costs.csv`, and `wo_changeovers.csv`. It requires these files in
+`data/raw/`:
 
 | File | Used for |
 |---|---|
@@ -98,14 +99,14 @@ requires these four files in `data/raw/`:
 | `Tiempo 14_17_19_ 2025.xlsx` | Work-order duration and time decomposition |
 | `Volumen 14_17_19_ 2025.xlsx` | Units and hectoliters produced |
 | `Mantenimiento 14_17_19_ 2025.xlsx` | Maintenance calls and intervention time |
+| `Cambios 14_17_19_ 2025.xlsx` | Historical transition flags; `Frecuencia Total` is diagnostic only |
+| `Tabla CF Prat 2026_14_17_19.xlsx` | SKU-to-SKU theoretical changeover costs and calendar rules |
 
 The full LineWise data inventory also includes these raw files. Some downstream
 products are documented but not implemented yet:
 
 | File | Pipeline role |
 |---|---|
-| `Cambios 14_17_19_ 2025.xlsx` | Empirical changeover history for `wo_changeovers.csv` |
-| `Tabla CF Prat 2026_14_17_19.xlsx` | Theoretical changeover costs and calendar rules |
 | `Planificado - producciones 14 - 17 - 19.XLSX` | Planned week used to build `demand.csv` |
 | `Produccion_L14,17,19_18-22.xlsx` | Actual demo-week production for comparison |
 | `data - 2026-05-18T181640.542.xlsx` | Discarded duplicate of `OEE 14_17_19_ 2025.xlsx` |
@@ -118,12 +119,20 @@ make etl
 # Builds the implemented clean outputs:
 #   data/clean/wo_master.csv
 #   data/clean/skus.csv
+#   data/clean/changeover_costs.csv
+#   data/clean/wo_changeovers.csv
 
 make etl-wo-master
 # Rebuilds only data/clean/wo_master.csv
 
 make etl-skus
 # Rebuilds only data/clean/skus.csv
+
+make etl-changeover-costs
+# Rebuilds only data/clean/changeover_costs.csv
+
+make etl-wo-changeovers
+# Rebuilds only data/clean/wo_changeovers.csv
 ```
 
 To use a different source or output directory:
@@ -133,9 +142,8 @@ make etl RAW_DIR=/path/to/raw CLEAN_DIR=/path/to/clean
 ```
 
 The full ETL currently reports the remaining MVP products
-(`wo_changeovers.csv`, `line_capability.csv`, `line_calendar.csv`,
-`changeover_costs.csv`) as `not_implemented` warnings until those joins/parsers
-are added.
+(`line_capability.csv`, `line_calendar.csv`) as `not_implemented` warnings
+until those joins/parsers are added.
 
 ---
 

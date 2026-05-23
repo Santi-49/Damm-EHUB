@@ -3,7 +3,8 @@
 **Status:** M2 (deferred — not optimiser MVP) ·
 **Produced by:** [`services/etl/`](../../services/etl/) ·
 **Consumers:** [`services/simulator/`](../../services/simulator/) ·
-**Granularity:** one row per replayable incident anchored to `(line_id, start_ts)`
+**Granularity:** one row per replayable incident anchored to a line and an
+estimated or externally supplied timestamp
 
 Used only by the simulator. Lets us compare `S_real` and `S_opt` under the
 **same** unplanned downtime so neither side wins by luck.
@@ -14,7 +15,7 @@ Used only by the simulator. Lets us compare `S_real` and `S_opt` under the
 |---|---|---|
 | `incident_id` | str (PK) | Stable identifier `incident_<line>_<yyyymmddTHHMMSS>`. |
 | `line_id` | int (14/17/19) | Line affected. |
-| `start_ts` | timestamp | When the incident began. Derived from `wo_master.start_ts + offset` per cause type. |
+| `start_ts` | timestamp | When the incident began. Historical exports do not provide this directly; M2 must derive an explicitly estimated timestamp or use an external event source. |
 | `duration_hours` | float | How long it disrupted production. |
 | `cause` | str | One of `breakdown` / `unplanned_maintenance` / `downstream_block` / `upstream_starve` / `other`. |
 | `source_wo_id` | str \| null | The WO that surfaced the incident, when traceable. |
@@ -27,7 +28,7 @@ wo_master.csv  ──► extract rows where:
                        downstream_block_hours > 0.5    → cause = "downstream_block"
                        upstream_starve_hours > 0.5     → cause = "upstream_starve"
                        unplanned_stop_hours > 1.0      → cause = "breakdown" (if not already)
-                   one or more rows per WO, with anchored start_ts
+                   one or more rows per WO, with estimated/external start_ts
                                  │
                                  ▼
                           incidents.csv
@@ -35,10 +36,10 @@ wo_master.csv  ──► extract rows where:
 
 ## Anchoring philosophy
 
-Incidents are anchored to `(line_id, start_ts)` — the equipment and moment,
-**not** the SKU. A breakdown on L17 at 10:00 happened independently of which
-SKU was on the line. When `S_opt` places a different SKU there, it still
-suffers the same downtime.
+Incidents should be anchored to `(line_id, start_ts)` — the equipment and
+moment, **not** the SKU. Because the current historical files have only
+`end_day`, M2 must make any timestamp estimation explicit and keep it out of
+the canonical `wo_master` facts.
 
 Exceptions (SKU-attributable jams typical of a specific format) are allowed
 and documented per-row in `source_wo_id` notes.

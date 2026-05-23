@@ -4,7 +4,7 @@ Lineage:
     parse_oee() → build_skus() → skus.csv
 
 One row per sku_id. For conflicting attribute values within a sku_id,
-the row with the latest end_ts wins. Conflicts are emitted as warnings.
+the row with the latest source date wins. Conflicts are emitted as warnings.
 
 Column renaming (oee internal → skus.csv):
     container_type_raw → container_type
@@ -86,7 +86,7 @@ def build_skus(oee: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         warnings.append(f"skus_excluded_synthetic: {n} rows for sku_ids {list(_EXCLUDE_SKU_IDS)} dropped")
     work = work[~excluded].reset_index(drop=True)
 
-    # Sort descending by end_ts so drop_duplicates(keep="first") keeps the most-recent row
+    # Sort descending by date-only end_ts so drop_duplicates keeps the most recent row.
     work = work.sort_values("end_ts", ascending=False)
 
     # Detect attribute conflicts within each sku_id before deduplication

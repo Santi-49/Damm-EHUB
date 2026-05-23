@@ -59,8 +59,8 @@ Files live in `data/raw/` (gitignored). Detailed inventory in [`docs/linewise/da
 | `Tiempo 14_17_19_ 2025.xlsx` | Time decomposition per WO | Source for `incident_log` (PNP, IDLE, downtime breakdown) |
 | `Volumen 14_17_19_ 2025.xlsx` | UDS / HL per WO | Used for `speed_median` |
 | `Mantenimiento 14_17_19_ 2025.xlsx` | Maintenance interventions | Used for `incident_log` (replay) |
-| `Cambios 14_17_19_ 2025.xlsx` | Per-WO changeover flags (`C.Brand`, `C.Envase`, …) | Training features for the changeover ML |
-| `Tabla CF Prat 2026_14_17_19.xlsx` | Theoretical changeover matrix + cleaning/maintenance calendar | Theoretical floor for edge weights |
+| `Cambios 14_17_19_ 2025.xlsx` | Per-WO changeover flags (`C.Brand`, `C.Envase`, …) | Historical transition features / drill-down |
+| `Tabla CF Prat 2026_14_17_19.xlsx` | Theoretical changeover matrix + cleaning/maintenance calendar | Source for SKU-to-SKU edge weights |
 | `Planificado - producciones 14 - 17 - 19.XLSX` | Plan for week 18–24 May 2026 | Demo input — re-aggregated to weekly demand |
 | `Produccion_L14,17,19_18-22.xlsx` | Actual production that same week | Ground truth for the demo comparison |
 | `data - 2026-05-18….xlsx` | Duplicate of OEE 2025 | **Discarded** |

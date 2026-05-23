@@ -2,7 +2,7 @@
 
 ## Architecture
 - [System Overview](architecture/overview.md) — services, request flow, component map
-- [LineWise (Arch D)](architecture/linewise.md) — graph-based optimiser + ML edges + simulator
+- [LineWise (Arch D)](architecture/linewise.md) — graph-based optimiser + SKU-to-SKU edge costs + simulator
 - [ADR 001 — Module Contract](architecture/adr/001-module-contract.md) — why the module boundary exists
 
 ## LineWise (challenge)

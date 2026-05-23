@@ -49,8 +49,9 @@ the persistent recurring baseline.
   `biweekly:monday`. Unrecognised patterns are surfaced in
   `ETLResult.warnings`.
 * Only emit rows that actually constrain production — pure-information rows
-  in the CF sheet (e.g. arranque / final times) live in
-  `changeover_costs.csv` as part of the changeover hour breakdown.
+  in the CF sheet (e.g. arranque / final times) are parsed only when a
+  downstream product explicitly needs boundary/startup costs. They are not
+  part of SKU-to-SKU `changeover_costs.csv`.
 
 ## Used by
 

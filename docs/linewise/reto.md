@@ -64,21 +64,18 @@ donde:
 duration_run(WO_i)        = uds_pedidas(WO_i) / velocidad_efectiva(sku_i, L)
 velocidad_efectiva(sku,L) = mediana(UDS / Tiempo Máquina en Marcha) por (sku, línea)
 expected_downtime(WO_i)   = E[H.Tot.×(1-OEE) | sku, línea, día_semana] (modelo)
-changeover(a→b, L)        = max( T_teórico(a,b,L), media_empírica(a→b,L) )
+changeover(a→b, L)        = T_CF_expandido(a,b,L)
 ```
 
 ### 1.3 Construcción de `changeover(a→b, L)`
 
-1. **Base teórica** desde `Tabla CF Prat 2026…`:
+1. **Base teórica** desde `Tabla CF Prat 2026…`, expandida a SKU→SKU:
    - `cambio_lata` (tipo envase a → b)
    - `cambio_cerveza` si cambia `Cerveza`
    - `cambio_etiqueta/tapón` si cambia `Mat. Precio` con misma cerveza
    - `cambio_packaging` si cambia `Packaging Primario/Secundario`
-   - `arranque/final` si hay cambio de turno con personal distinto
-2. **Ajuste empírico** desde `Cambios + Tiempo`:
-   - Para cada par `(sku_prev, sku_actual)` o por componentes (flags `C.Brand=1`, `C.Envase=1`, …) → `Tiempo Máquina en paro` o primer tramo `PNP` previo a marcha.
-   - Si ≥ 5 observaciones por par/combinación → mediana empírica; si no → teórico.
-3. **Penalización por incertidumbre**: añadir P75/P90 si se quiere política conservadora.
+2. Si cambian varios componentes, el coste total es el **máximo** de los componentes, no la suma.
+3. `Cambios` aporta flags históricos para explicar la transición, pero no el target de tiempo.
 
 ### 1.4 Función objetivo
 
@@ -320,7 +317,7 @@ El optimizador no consume solo demanda. Necesita además:
 | Input | Schema esencial | Quién lo produce |
 |---|---|---|
 | `sku_line_capability.csv` | `sku, tren, can_produce (bool), speed_median_uds_h, oee_median, n_wos_historico` | Derivado de `executed_runs` |
-| `changeover_matrix.csv` | `tren, sku_from, sku_to, hours, source ("teórico"\|"empírico"\|"híbrido")` | Fusión de `Tabla CF Prat` + agregaciones de `executed_runs` + `changes_actual` |
+| `changeover_matrix.csv` | `tren, sku_from, sku_to, hours, source="tabla_cf_prat"` | `Tabla CF Prat` expandida a SKU→SKU; total = máximo de componentes |
 | `calendar_constraints.csv` | `tren, regla_temporal, evento, duracion_h, frecuencia` | `Tabla CF Prat` (Tiempos adicionales) + reglas operativas + perturbaciones runtime |
 | `optimizer_hyperparams.yaml` | `horizon_days` (default 30), `freeze_days`, `lambda_changeover`, `mu_demanda_no_cubierta`, `nu_beneficio`, `margen_per_sku` (dict sku → €/uds, opcional, default 1.0 para todos) | Configuración / usuario. `margen_per_sku` activa el dropeo selectivo cuando hay infactibilidad |
 

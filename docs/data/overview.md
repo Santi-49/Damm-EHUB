@@ -21,10 +21,10 @@ the canonical names so the lineage is one click away.
                                                              │
                 ┌────────────────────────────────────────────┼──────────────────────────────────┐
                 ▼                                            ▼                                  ▼
-       wo_master.csv (spine)                     skus.csv          wo_changeovers.csv (transitions)
+       wo_master.csv (spine)                     skus.csv          wo_changeovers.csv (history)
                 │                                    │                        │
-                ├──────► line_capability.csv         │                        │ ← ML training input
-                │                                    │                        │   (empirical only)
+                ├──────► line_capability.csv         │                        │
+                │                                    │                        │
                 ├──────► node_cost_train.csv  ◄──────┤                        │
                 │                                    │                        │
                 ├──────► demand.csv  (window-aggregated)                       │
@@ -32,20 +32,19 @@ the canonical names so the lineage is one click away.
                 └──────► incidents.csv  (simulator, M2)                        │
                                                                                │
    data/raw/Tabla CF Prat 2026_14_17_19.xlsx  ────► line_calendar.csv          │
-                                              ────► changeover_costs.csv ◄──── │
-                                                    (optimizer floor only,      │
-                                                     NOT training data)  ←──────┘
+                                              ────► changeover_costs.csv ──────┘
+                                                    (SKU-to-SKU edge weights)
 ```
 
 | # | Product | Role | Consumers | Status |
 |---|---|---|---|---|
 | 1 | [`wo_master`](./wo_master.md) | Master cleaned work-order table — the spine | Everyone | **MVP** |
 | 2 | [`skus`](./skus.md) | SKU catalogue (deduped attributes) | Everyone | **MVP** |
-| 3 | [`wo_changeovers`](./wo_changeovers.md) | Transition master table (`sku_from → sku_to`) with empirical times + features | Changeover-ML (training), UI drill-down | **MVP** |
+| 3 | [`wo_changeovers`](./wo_changeovers.md) | Historical transition table (`sku_from -> sku_to`) with flags and estimated CF time | UI drill-down, diagnostics | **MVP** |
 | 4 | [`demand`](./demand.md) | Window-aggregated demand — single input to the optimiser | Optimiser | **MVP** |
 | 5 | [`line_capability`](./line_capability.md) | Hard `(sku, line) → can_produce + median speed/OEE` | Optimiser (hard gate + node cost fallback), simulator | **MVP** |
 | 6 | [`line_calendar`](./line_calendar.md) | Forced events per line (cleaning, maintenance, injected breakdowns) | Optimiser, simulator | **MVP** |
-| 7 | [`changeover_costs`](./changeover_costs.md) | Theoretical changeover matrix — optimizer floor for unseen pairs | Optimiser (edge weights floor / fallback) | **MVP** |
+| 7 | [`changeover_costs`](./changeover_costs.md) | SKU-to-SKU theoretical transition-time matrix | Optimiser edge weights, `wo_changeovers` estimated-time join | **MVP** |
 | 8 | [`node_cost_train`](./node_cost_train.md) | Training table for production-time / speed model | (optional ML) | post-MVP |
 | 9 | [`incidents`](./incidents.md) | Deterministic-replay incident log | Simulator only | M2 (deferred) |
 
@@ -53,9 +52,10 @@ the canonical names so the lineage is one click away.
 post-MVP — until then the optimiser uses
 `line_capability.median_speed_uds_per_hour` for node cost.
 
-**Changeover ML** trains directly on `wo_changeovers.csv` (product 3) —
-empirical transitions only. `changeover_costs.csv` is the optimizer's floor
-for pairs the ML has never seen; it is never a training input.
+The current MVP does not have a reliable observed changeover-duration target.
+`changeover_costs.csv` is the authoritative SKU-to-SKU transition-time product,
+derived from `Tabla CF Prat`. `wo_changeovers.csv` records historical transition
+context and joins the theoretical estimate for explanation.
 
 ## Time window
 
@@ -70,7 +70,8 @@ Demand aggregation and the optimiser's planning horizon share a single knob:
 * Units: counts of cans use `units_*` (was `UDS`), hectoliters `hectoliters_*` (was `HL`).
 * Identifiers: always `_id` suffix (`sku_id`, `line_id`, `wo_id`).
 * Booleans: `had_*`, `is_*`, `can_*`, or `flag_*` for explicit boolean change indicators.
-* Timestamps: `_ts` suffix (`start_ts`, `end_ts`).
+* Dates: `_day` suffix when the source has day granularity (`end_day`, `transition_day`).
+* Timestamps: `_ts` suffix only when actual time-of-day exists.
 
 ## Where the cleaning rules live
 

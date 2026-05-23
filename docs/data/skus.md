@@ -40,7 +40,7 @@ surfaced as warnings.
 
 * Filter out `sku_id == "LIMPIEZA"`.
 * For conflicting attribute values within a `sku_id`, take the value from the
-  WO with the latest `end_ts`. Emit a warning per conflicting column.
+  WO with the latest source date/order. Emit a warning per conflicting column.
 * Empty / `"-"` / `"N/A"` strings normalised to `null`.
 
 ## Used by

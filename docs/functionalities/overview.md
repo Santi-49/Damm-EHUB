@@ -67,7 +67,7 @@ A single-import backward-compatible shim still lives at
 > Read every raw Excel under `data/raw/`. Produce the eight tidy CSVs under
 > `data/clean/` documented in [`docs/linewise/datos.md`](../linewise/datos.md) §3.
 > Never modify the raw files. Surface data-quality warnings (OEE > 1,
-> `H. Tot.` outliers, ambiguous `Frecuencia Total`, …) — do not silently clip.
+> `H. Tot.` outliers, diagnostic `Frecuencia Total`, …) — do not silently clip.
 
 ### 2. Demand dataset — `DemandBuilderContract`
 
@@ -76,14 +76,12 @@ A single-import backward-compatible shim still lives at
 > units_demanded, source, priority)`. Bucket size = `WindowConfig.days` (default 7).
 > The optimiser never sees `line_id / day / turn` — those are decisions, not demand.
 
-### 3. ML changeover — `ChangeoverModelContract`
+### 3. Changeover costs / optional ML — `ChangeoverModelContract`
 
-> Given two SKUs and a line, predict the **total** changeover time in hours and
-> its **segmented breakdown** (brand / container / cap / packaging / pallet /
-> product / volume / startup / shutdown) such that the segments sum to the total.
-> Return a confidence and a source tag (`ml` / `hibrido` / `teorico`). The
-> optimiser uses the total as an edge weight; the segments power the SHAP-based
-> drill-down. Never predict OEE.
+> Given two SKUs and a line, return the **total** changeover time in hours and
+> its segmented breakdown. In the MVP this comes from `changeover_costs.csv`,
+> derived from `Tabla CF Prat`; when multiple components change, the total is
+> the maximum segment, not the sum. Never predict OEE.
 
 ### 4. Graph optimiser — `GraphOptimizerContract`
 
@@ -110,9 +108,9 @@ A single-import backward-compatible shim still lives at
 |---|---|---|
 | `ETLContract` | (raw Excel) | All nine clean CSVs in [`docs/data/overview.md`](../data/overview.md) |
 | `DemandBuilderContract` | `wo_master.csv` or `Planificado…XLSX` + `skus.csv` | `demand.csv` |
-| `ChangeoverModelContract.fit` | `edge_cost_train.csv`, `changeover_costs.csv` (floor) | model artefact |
-| `ChangeoverModelContract.predict*` | model artefact + `changeover_costs.csv` (fallback) | `ChangeoverPrediction` (in-memory) |
-| `GraphOptimizerContract` | `demand.csv`, `line_capability.csv`, `changeover_costs.csv`, `line_calendar.csv` + ML predictions | `Sequence` (in-memory; persisted as `sequence.csv` by the API) |
+| `ChangeoverModelContract.fit` | Optional later, only if a true observed duration target is provided | model artefact |
+| `ChangeoverModelContract.predict*` | `changeover_costs.csv` | `ChangeoverPrediction` (in-memory) |
+| `GraphOptimizerContract` | `demand.csv`, `line_capability.csv`, `changeover_costs.csv`, `line_calendar.csv` | `Sequence` (in-memory; persisted as `sequence.csv` by the API) |
 | `SimulatorContract` | `Sequence` + `line_capability.csv` + `line_calendar.csv` + `incidents.csv` | `SimulationReport` |
 
 ## Definition of "ready to integrate"

@@ -31,12 +31,12 @@ Three mappers, one shape:
 ```
 wo_master.csv (kind == "production")
    │
-   └──► drop LIMPIEZA, bucket on end_ts via WindowConfig, sum units_produced
+   └──► drop LIMPIEZA, bucket on end_day via WindowConfig, sum units_produced
         ──► demand.csv (source == "historico_2025")
 
 Planificado - producciones 14 - 17 - 19.XLSX
    │
-   └──► normalise CAJ/UN with skus.units_per_case, bucket on start_ts,
+   └──► normalise CAJ/UN with skus.units_per_case, bucket on Fecha ini.,
         drop tren/hora_ini/turno
         ──► demand.csv (source == "plan_2026")
 
@@ -55,7 +55,7 @@ UI form
   `units_per_case`.
 * Window assignment uses `WindowConfig.anchor`:
   * `"monday"`: ISO-week boundaries. Mid-week WOs fall into the week that
-    contains their reference timestamp.
+    contains their reference date.
   * `"fixed_start"`: roll forward from `start_date` in `days`-sized chunks.
 * Multiple SKUs in the same window → one row per `(sku_id, window)` with
   summed `units_demanded`.

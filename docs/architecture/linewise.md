@@ -9,9 +9,9 @@
 Weekly demand → graph (nodes = SKU chunks, edges = changeover times) →
 OR-Tools VRP with three "vehicles" (lines) and a **makespan** objective →
 proposed sequence → deterministic simulator that replays real incidents →
-side-by-side comparison with `S_real`. ML is scoped to **predicting edge
-weights only** (segmented + total); OEE is *computed*, never predicted, at
-the reporting layer.
+side-by-side comparison with `S_real`. MVP edge weights come from the
+predefined CF changeover table expanded to SKU-to-SKU costs; OEE is *computed*,
+never predicted, at the reporting layer.
 
 ## 2. Why Architecture D
 
@@ -23,7 +23,7 @@ Four options were compared (full breakdown in
 | A | Greedy + rules | Simple fail-safe — kept as `S_opt_fallback` |
 | B | ILP / CP-SAT | Powerful but hard to story-tell, brittle to model |
 | C | Greedy + local search + ML for OEE | Predicts a composite KPI — harder to defend |
-| **D** | **m-TSP graph + ML edge weights** | **Best storytelling, cleanest decoupling, mature solver (OR-Tools VRP), bounded ML target** |
+| **D** | **m-TSP graph + line-specific edge weights** | **Best storytelling, cleanest decoupling, mature solver (OR-Tools VRP), bounded transition-cost target** |
 
 ## 3. Pipeline
 
@@ -37,8 +37,8 @@ data/raw/  ──►  │  services/   │  ──►  data/clean/*.csv (see doc
                 ┌──────────────────────────────┐
                 │  services/optimizer/         │  inputs:
                 │    1. build graph (chunks)   │  ◄── demand.csv
-                │    2. ask ML for edge costs  │  ◄── services/changeover_ml/
-                │    3. solve OR-Tools VRP     │  ◄── changeover_costs.csv (floor)
+                │    2. load edge costs        │  ◄── changeover_costs.csv
+                │    3. solve OR-Tools VRP     │
                 │       (3 vehicles, makespan) │  ◄── line_capability.csv
                 │    4. emit Sequence          │  ◄── line_calendar.csv
                 └──────────────────────────────┘
@@ -64,7 +64,7 @@ data/raw/  ──►  │  services/   │  ──►  data/clean/*.csv (see doc
 |---|---|---|---|---|
 | 1 | **ETL — Data cleaning** | [`services/etl/`](../../services/etl/) | [`ETLContract`](../../packages/contracts/module/etl.py) | Person 1 |
 | 2 | **Demand dataset generation** (`WindowConfig`-driven) | [`services/etl/`](../../services/etl/) (sub-task) | [`DemandBuilderContract`](../../packages/contracts/module/etl.py) | Person 1 |
-| 3 | **ML changeover predictor** (segmented + total) | [`services/changeover_ml/`](../../services/changeover_ml/) | [`ChangeoverModelContract`](../../packages/contracts/module/changeover_ml.py) | Person 2 |
+| 3 | **Changeover costs / optional predictor** | [`services/changeover_ml/`](../../services/changeover_ml/) | [`ChangeoverModelContract`](../../packages/contracts/module/changeover_ml.py) | Person 2 |
 | 4 | **Graph optimiser (Arch D)** | [`services/optimizer/`](../../services/optimizer/) | [`GraphOptimizerContract`](../../packages/contracts/module/optimizer.py) | Person 2 |
 | 5 | **Simulator (deterministic OEE)** | [`services/simulator/`](../../services/simulator/) | [`SimulatorContract`](../../packages/contracts/module/simulator.py) | Person 1 |
 | — | **UI (Gantt + drill-down + what-if)** | [`apps/landing/`](../../apps/landing/), [`apps/web/`](../../apps/web/) | OpenAPI types in [`packages/contracts/api/generated/`](../../packages/contracts/api/generated/) | Person 3 |
@@ -84,8 +84,9 @@ Nine clean CSVs, all catalogued in [`docs/data/overview.md`](../data/overview.md
 [`line_calendar`](../data/line_calendar.md),
 [`changeover_costs`](../data/changeover_costs.md).
 
-**ML edge cost** — trains on [`wo_changeovers`](../data/wo_changeovers.md)
-(MVP product; empirical `sku_from → sku_to` transitions, no theoretical data).
+**Edge costs** — come from [`changeover_costs`](../data/changeover_costs.md),
+the SKU-to-SKU theoretical transition-time table. [`wo_changeovers`](../data/wo_changeovers.md)
+records historical transition context and joins those estimated times.
 
 **Post-MVP (ML node cost):** [`node_cost_train`](../data/node_cost_train.md).
 
@@ -141,10 +142,10 @@ doesn't leave one line idle.
 ```
 ┌───────────────────┐   sequence    ┌───────────────────┐
 │  OPTIMISER        │  ──────────►  │  SIMULATOR        │
-│  predicts ONLY    │               │  deterministic    │
-│  changeover times │               │  OEE + incidents  │
-│  (via ML edges,   │  ◄────────────│  emits            │
-│   segmented)      │  capacity     │  "infeasible"     │
+│  optimises ONLY   │               │  deterministic    │
+│  sequence using   │               │  OEE + incidents  │
+│  edge costs       │  ◄────────────│  emits            │
+│                  │  capacity     │  "infeasible"     │
 └───────────────────┘  feedback     └───────────────────┘
 ```
 
@@ -152,8 +153,8 @@ The optimiser **never** predicts OEE. The simulator never makes routing
 decisions. This means:
 
 1. **Fair comparison** with `S_real` — same simulator, same incidents, same calendar.
-2. **Bounded ML target** — changeover hours (segmented) are observable and
-   validatable; OEE is not.
+2. **Bounded edge-cost target** — SKU-to-SKU changeover hours are explainable
+   from predefined CF rules; OEE is not used as a routing prediction.
 3. **No risk of divergence** between "predicted OEE" used for routing and
    "reported OEE" used for KPI.
 
@@ -164,7 +165,7 @@ and [`docs/linewise/resumen.md`](../linewise/resumen.md) §6 for the full Gantt.
 
 | Milestone | Unblocks |
 |---|---|
-| **M1** ETL CSVs in `data/clean/` | optimiser + UI + ML training |
+| **M1** ETL CSVs in `data/clean/` | optimiser + UI |
 | **M2** Simulator validated against historical OEE (< 5 % error) | fair comparison KPI |
 | **M3** Arch A fallback end-to-end | demo safety net |
 | **M4** Arch D (OR-Tools VRP) integrated | primary demo path |
@@ -176,7 +177,7 @@ and [`docs/linewise/resumen.md`](../linewise/resumen.md) §6 for the full Gantt.
 | Risk | Severity | Mitigation |
 |---|---|---|
 | OR-Tools VRP integration slips | medium | Arch A is ready since Saturday evening |
-| ML edges underperform | medium | Theoretical matrix is the floor; ML only adjusts where confident |
+| Edge-cost assumptions are challenged | medium | CF-derived segments are transparent and validated against historical transitions |
 | Simulator doesn't reproduce historical OEE | medium-high | Person 1 dedicates Sunday morning to validation |
 | Confidential data leaks via git | **high** | `.gitignore` rules already in place; verify before every push |
 | Demo glitches live | medium | Pre-record a backup video; rehearse end-to-end |

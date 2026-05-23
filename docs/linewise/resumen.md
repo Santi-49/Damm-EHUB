@@ -99,8 +99,8 @@ flowchart LR
 | `Tiempo 14_17_19_ 2025.xlsx` | Descomposición temporal | ✅ Para `incident_log` |
 | `Volumen 14_17_19_ 2025.xlsx` | UDS/HL por WO | ✅ Junto con OEE |
 | `Mantenimiento 14_17_19_ 2025.xlsx` | Averías históricas | ✅ Para `incident_log` |
-| `Cambios 14_17_19_ 2025.xlsx` | Flags de cambio empíricos | ✅ Features del ML |
-| `Tabla CF Prat 2026_14_17_19.xlsx` | Matriz teórica + calendario | ✅ Aristas teóricas |
+| `Cambios 14_17_19_ 2025.xlsx` | Flags históricos de cambio | ✅ Drill-down / features |
+| `Tabla CF Prat 2026_14_17_19.xlsx` | Matriz teórica + calendario | ✅ Aristas SKU→SKU |
 | `Planificado - producciones….XLSX` | Plan teórico semana 18-24/05/2026 | ✅ Demo final |
 | `Produccion_L14,17,19_18-22.xlsx` | Realidad esa semana | ✅ Demo final |
 | `data - 2026-05-18….xlsx` | Duplicado de OEE | ❌ Descartado |
@@ -123,7 +123,7 @@ sequenceDiagram
     U->>UI: Elige semana W y ventana de comparación
     UI->>ETL: Reagregar executed_runs a demand.csv (semana W)
     ETL-->>Opt: demand.csv + inputs hermanos
-    Opt->>Opt: Resuelve m-TSP con ML edges
+    Opt->>Opt: Resuelve m-TSP con aristas CF SKU→SKU
     Opt-->>Sim: S_opt
     Sim->>Sim: Aplica replay incidentes W
     Sim-->>UI: Métricas S_opt
@@ -229,7 +229,7 @@ gantt
 
 | Día | Hora | Tarea | Output |
 |---|---|---|---|
-| Sáb | 09–13 | ETL pandas: join OEE+Tiempo+Volumen+Mantenimiento, drop columnas constantes, derivar `fecha_inicio`, calcular `speed_median`, parsear Tabla CF a `changeover_theoretical.csv` | 8 CSVs en `data/clean/` |
+| Sáb | 09–13 | ETL pandas: join OEE+Tiempo+Volumen+Mantenimiento, preservar `end_day` + secuencia, calcular `speed_median`, parsear Tabla CF a `changeover_costs.csv` | CSVs en `data/clean/` |
 | Sáb | 13–17 | Simulador: función `evaluate_sequence(S, inputs) → dict de métricas`. Aplica cambios entre slots, eventos de calendario, overlay de incidentes | `simulator.py` con tests |
 | Sáb | 17–20 | `incident_log.csv`: anclar incidentes a (tren, instante). Validar overlay sobre semana de muestra | `incident_log.csv` |
 | Dom | 09–11 | Validación: aplicar simulador a `S_real` → debe reproducir OEE histórico con error < 5% | Notebook de validación |
@@ -241,7 +241,7 @@ gantt
 |---|---|---|---|
 | Sáb | 13–16 | Construcción del grafo: leer `demand.csv`, partir SKUs grandes en chunks (max 8 h productivas), enumerar nodos factibles por línea, añadir nodos forzados de limpieza/mantenimiento | `graph_builder.py` |
 | Sáb | 16–18 | Aristas teóricas: leer `changeover_theoretical.csv`, mapear pares de SKUs a tiempo de cambio según componentes (Envase, Marca, Packaging, etc.) | Matriz inicial de aristas |
-| Sáb | 18–22 | Modelo ML de aristas: target = `changeover_time` empírico (de `PNP` previo a marcha). Features: SKU from/to + atributos + tren + hora + día. Gradient boosting + walk-forward. Capar predicciones con teórico como floor | `edge_model.pkl` + SHAP |
+| Sáb | 18–22 | Validación de aristas: comprobar que `changeover_costs.csv` cubre todos los pares históricos y permitidos; documentar regla de máximo de componentes | Matriz validada + informe |
 | Dom | 09–14 | OR-Tools VRP: 3 viajantes, capacidad temporal, disjunciones con penalty = `margen × uds`, objetivo makespan + ε·suma. Validar sobre semana de muestra | `optimizer.py` que devuelve `sequence.csv` |
 | Dom | 14–17 | Re-plan: aceptar perturbación, identificar estado actual, aplicar freeze_days, re-correr | Endpoint `replan(perturbation)` |
 
@@ -274,7 +274,7 @@ flowchart LR
 | Riesgo | Probabilidad | Mitigación |
 |---|---|---|
 | OR-Tools VRP no se integra a tiempo | 🟡 media | **Arq A ya está funcionando desde el sábado** como fallback presentable |
-| Modelo ML de aristas tiene poca señal | 🟡 media | Aristas teóricas como floor; ML solo ajusta cuando tiene confianza |
+| Supuesto de coste de aristas se cuestiona | 🟡 media | Aristas CF segmentadas, transparentes y validadas contra todos los pares históricos |
 | Simulador no reproduce OEE histórico | 🔴 baja-alta | P1 dedica el domingo AM a validación; ajustar fórmulas hasta error < 5% |
 | Drill-down no se ve bien en demo | 🟡 media | Preparar 2-3 casos pre-cargados ("la peor transición de la semana 14") para no depender de búsqueda en vivo |
 | Datos confidenciales en repo | 🔴 alta | `.gitignore` con `data/`, `data - original/`, `*.xlsx` **antes del primer commit** |

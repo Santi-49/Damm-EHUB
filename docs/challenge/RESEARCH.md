@@ -122,5 +122,5 @@
 - **2026-05-23 — Decision: no external data sources.** Brief allows them but
   `docs/linewise/cobertura_brief.md` §6 documents we focus on the historical dataset.
   Revisit only if a major gap emerges.
-- **2026-05-23 — Architecture choice locked: D (m-TSP graph + ML edges).** Rationale in
+- **2026-05-23 — Architecture choice locked: D (m-TSP graph + SKU-to-SKU edge costs).** Rationale in
   `docs/linewise/implementacion.md` §3 and §3.D. Arch A retained as fail-safe.
