@@ -2,7 +2,7 @@
 
 > Owner: Person 1 · Contracts: [`ETLContract`](../../packages/contracts/module/etl.py),
 > [`DemandBuilderContract`](../../packages/contracts/module/etl.py) ·
-> Status: `wo_master`, `skus`, `changeover_costs`, and `wo_changeovers` implemented; remaining MVP products pending
+> Status: `wo_master`, `demand`, `skus`, `changeover_costs`, and `wo_changeovers` implemented; remaining MVP products pending
 
 This is the **initial bottleneck** of the LineWise pipeline. Until clean
 datasets land in `data/clean/`, neither the optimiser nor the ML model nor the
@@ -19,6 +19,7 @@ documented in [`docs/data/overview.md`](../../docs/data/overview.md):
 | Output CSV | Doc | Status | Notes |
 |---|---|---|---|
 | `wo_master.csv` | [wo_master.md](../../docs/data/wo_master.md) | **MVP** | |
+| `demand.csv` | [demand.md](../../docs/data/demand.md) | **MVP** | Historical 2025 demand buckets from `wo_master`; default weekly Monday windows. |
 | `skus.csv` | [skus.md](../../docs/data/skus.md) | **MVP** | |
 | `wo_changeovers.csv` | [wo_changeovers.md](../../docs/data/wo_changeovers.md) | **MVP** | Historical transitions: `sku_from -> sku_to`, flags/features, estimated CF time joined from `changeover_costs`. |
 | `line_capability.csv` | [line_capability.md](../../docs/data/line_capability.md) | **MVP** | |
@@ -112,6 +113,7 @@ make etl
 
 # Rebuild individual implemented products
 make etl-wo-master
+make etl-demand
 make etl-skus
 make etl-changeover-costs
 make etl-wo-changeovers

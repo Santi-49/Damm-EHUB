@@ -36,31 +36,30 @@ class ETLContract(Protocol):
 
     * ``wo_master.csv``           Master cleaned work-order table (one row per WO)
     * ``skus.csv``                SKU catalogue (one row per SKU)
-    * ``wo_changeovers.csv``      Transition master table — ``sku_from → sku_to`` pairs
-                                  derived from consecutive WOs (i → i+1) on the same
-                                  line, with empirical ``changeover_hours``, SKU
-                                  attributes for both sides, change flags, and context
-                                  features. This is the direct training input for the
-                                  changeover ML model (empirical observations only).
+    * ``wo_changeovers.csv``      Historical ``sku_from -> sku_to`` transitions
+                                  derived from consecutive production WOs on the same
+                                  line, with change flags and estimated CF cost joined
+                                  from ``changeover_costs.csv``.
+    * ``demand.csv``              Window-aggregated historical demand from
+                                  ``wo_master.csv`` (default source: ``historico_2025``).
     * ``line_capability.csv``     Materialised ``(sku_id, line_id) -> can_produce + median speed/OEE``
     * ``line_calendar.csv``       Forced events per line (cleaning + maintenance)
-    * ``changeover_costs.csv``    Theoretical changeover matrix (optimizer floor for unseen
-                                  pairs; NOT used as ML training data)
+    * ``changeover_costs.csv``    SKU-to-SKU theoretical transition matrix expanded from
+                                  ``Tabla CF Prat``.
     * ``node_cost_train.csv``     [post-MVP] Training table for production-time / speed model
-    * ``incidents.csv``           [M2, simulator] Replay log anchored to ``(line_id, start_ts)``
+    * ``incidents.csv``           [M2, simulator] Replay log with explicit or estimated
+                                  incident timestamps.
 
     Invariants:
 
     * The implementation MUST NOT modify files under ``raw_dir``.
     * Discarded inputs (``data - 2026-05-18….xlsx``, ``Diario Hl_Planif.xlsx``)
       must be reported in ``ETLResult.discarded_files``.
-    * Data-quality warnings (OEE > 1, ``total_hours`` outliers, ``quality`` != 1,
-      ``changeover_hours < 0`` or ``> 24``, ...) must be surfaced in
+    * Data-quality warnings (OEE > 1, ``total_hours`` outliers, diagnostic
+      ``Frecuencia Total``, ...) must be surfaced in
       ``ETLResult.warnings`` — do NOT silently clip values.
-    * ``wo_changeovers.csv`` must contain only real observed transitions — no
-      theoretical values from ``changeover_costs.csv`` are mixed in.
-    * A warning must be emitted for every ``wo_changeovers`` row where
-      ``|changeover_hours - cambios_hours| > 0.5`` (cross-validation mismatch).
+    * ``wo_changeovers.csv`` must not invent timestamp-gap changeover targets.
+      Estimated duration comes from ``changeover_costs.csv``.
     """
 
     async def build_clean_datasets(self, raw_dir: Path, out_dir: Path) -> ETLResult:
@@ -78,7 +77,7 @@ class DemandBuilderContract(Protocol):
     For ``source = "historico_2025"``:
         Read ``wo_master.csv``. Drop ``sku_id == "LIMPIEZA"``. Drop ``PRT…-M``
         maintenance WOs. Assign each WO to a window via ``window.anchor`` on
-        ``end_ts``. Sum ``units_produced`` per ``(sku_id, window)``.
+        ``end_day``. Sum ``units_produced`` per ``(sku_id, window)``.
 
     For ``source = "plan_2026"``:
         Read ``Planificado - producciones 14 - 17 - 19.XLSX``. Normalise

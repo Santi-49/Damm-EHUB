@@ -1,6 +1,6 @@
 # `demand.csv` — Window-aggregated demand
 
-**Status:** MVP · **Produced by:** [`services/etl/`](../../services/etl/) (DemandBuilder) ·
+**Status:** MVP (`historico_2025` implemented) · **Produced by:** [`services/etl/`](../../services/etl/) (DemandBuilder) ·
 **Consumer:** the optimiser (sole input that varies per run) ·
 **Granularity:** one row per `(sku_id, window)` pair
 
@@ -26,7 +26,8 @@ decisions, not demand.
 
 ## Lineage
 
-Three mappers, one shape:
+Three mappers, one shape. The implemented MVP mapper is `historico_2025` from
+`wo_master.csv`.
 
 ```
 wo_master.csv (kind == "production")
@@ -50,6 +51,8 @@ UI form
 
 * Drop `sku_id == "LIMPIEZA"` and `wo_kind != "production"` from the historical
   source — those are not demand.
+* Drop historical rows with missing/non-positive `units_produced`; emit a
+  warning with the dropped count.
 * For `plan_2026`: if `unit_of_measure == "CAJ"`, multiply
   `planned_quantity * skus.units_per_case`. Warn on missing
   `units_per_case`.
@@ -69,3 +72,13 @@ size *and* the optimiser planning horizon track this single knob.
 ## Used by
 
 * The optimiser, as the only varying input across runs.
+
+## Validation
+
+The ETL validates the historical demand output with:
+
+* primary key uniqueness on `(window_id, sku_id)`
+* positive integer `units_demanded`
+* FK coverage against `skus.sku_id`
+* no line/day/turn columns in the output
+* reconciliation against `wo_master.units_produced` for production WOs

@@ -18,6 +18,7 @@ Both must appear in `ETLResult.discarded_files`.
 | Join | On | Result |
 |---|---|---|
 | `OEE` + `Tiempo` + `Volumen` + `Mantenimiento` | `OF == WOID` | `wo_master.csv` |
+| `wo_master` production rows | `end_day` bucket + `sku_id` | `demand.csv` |
 | OEE SKU attributes | `drop_duplicates(sku_id)` | `skus.csv` |
 | `Tabla CF Prat` + `skus` | SKU attributes and line/container rules | `changeover_costs.csv` |
 | `wo_master` + `skus` + `Cambios` + `changeover_costs` | consecutive production WOs, `wo_to_id`, `(line, sku_from, sku_to)` | `wo_changeovers.csv` |
@@ -147,6 +148,8 @@ Expected warning names include:
 * `oee_above_one`
 * `inefficiency_negative`
 * `maintenance_double_count`
+* `demand_invalid_end_day`
+* `demand_invalid_units`
 * `skus_attribute_conflict`
 * `changeover_costs_missing_container_type`
 * `changeover_costs_missing_format_pair`

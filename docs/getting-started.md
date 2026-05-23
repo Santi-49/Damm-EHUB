@@ -89,9 +89,9 @@ LineWise depends on confidential Damm Excel exports. Keep all source files under
 
 ### Source files
 
-The ETL that is implemented today builds `wo_master.csv`, `skus.csv`,
-`changeover_costs.csv`, and `wo_changeovers.csv`. It requires these files in
-`data/raw/`:
+The ETL that is implemented today builds `wo_master.csv`, `demand.csv`,
+`skus.csv`, `changeover_costs.csv`, and `wo_changeovers.csv`. It requires
+these files in `data/raw/`:
 
 | File | Used for |
 |---|---|
@@ -118,12 +118,16 @@ products are documented but not implemented yet:
 make etl
 # Builds the implemented clean outputs:
 #   data/clean/wo_master.csv
+#   data/clean/demand.csv
 #   data/clean/skus.csv
 #   data/clean/changeover_costs.csv
 #   data/clean/wo_changeovers.csv
 
 make etl-wo-master
 # Rebuilds only data/clean/wo_master.csv
+
+make etl-demand
+# Rebuilds only data/clean/demand.csv from data/clean/wo_master.csv
 
 make etl-skus
 # Rebuilds only data/clean/skus.csv

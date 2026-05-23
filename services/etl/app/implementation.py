@@ -8,9 +8,12 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pandas as pd
+
 from packages.contracts.module.etl import ETLResult
 from packages.contracts.module.schemas import DemandBucket, Source, WindowConfig
 
+from .demand import build_historical_demand, buckets_to_dataframe, dataframe_to_buckets
 from .joins.changeover_costs import build_changeover_costs
 from .joins.skus import build_skus
 from .joins.wo_changeovers import build_wo_changeovers
@@ -42,14 +45,19 @@ class ETL:
         window: WindowConfig | None = None,
         whatif_extra: tuple[DemandBucket, ...] | None = None,
     ) -> tuple[DemandBucket, ...]:
-        raise NotImplementedError("build_demand — implement after M1")
+        if source == "whatif_usuario":
+            return whatif_extra or tuple()
+        if source != "historico_2025":
+            raise NotImplementedError("build_demand source not implemented: plan_2026")
+
+        return await asyncio.to_thread(_build_historical_demand_sync, clean_dir, window)
 
     async def to_csv(
         self,
         demand: tuple[DemandBucket, ...],
         out_path: Path,
     ) -> Path:
-        raise NotImplementedError("to_csv — implement after M1")
+        return await asyncio.to_thread(_demand_to_csv_sync, demand, out_path)
 
 
 # ── Synchronous implementation (called via asyncio.to_thread) ────────────────
@@ -69,6 +77,12 @@ def _build_sync(raw_dir: Path, out_dir: Path) -> ETLResult:
     wo_master.to_csv(out_dir / "wo_master.csv", index=False)
     rows_per_table["wo_master"] = len(wo_master)
     all_warnings.extend(wo_warnings)
+
+    # ── demand ───────────────────────────────────────────────────────────────
+    demand, demand_warnings = build_historical_demand(wo_master, WindowConfig())
+    demand.to_csv(out_dir / "demand.csv", index=False)
+    rows_per_table["demand"] = len(demand)
+    all_warnings.extend(demand_warnings)
 
     # ── skus ──────────────────────────────────────────────────────────────────
     skus, skus_warnings = build_skus(oee_df)
@@ -104,3 +118,21 @@ def _build_sync(raw_dir: Path, out_dir: Path) -> ETLResult:
         discarded_files=DISCARDED_FILES,
         warnings=tuple(all_warnings),
     )
+
+
+def _build_historical_demand_sync(
+    clean_dir: Path,
+    window: WindowConfig | None,
+) -> tuple[DemandBucket, ...]:
+    wo_master = pd.read_csv(clean_dir / "wo_master.csv")
+    demand, _warnings = build_historical_demand(wo_master, window or WindowConfig())
+    return dataframe_to_buckets(demand)
+
+
+def _demand_to_csv_sync(
+    demand: tuple[DemandBucket, ...],
+    out_path: Path,
+) -> Path:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    buckets_to_dataframe(demand).to_csv(out_path, index=False)
+    return out_path
