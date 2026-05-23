@@ -1,0 +1,54 @@
+{
+  "feature_cols": [
+    "line_id",
+    "sku_id",
+    "container_type",
+    "brand",
+    "family",
+    "beer",
+    "primary_packaging",
+    "secondary_packaging",
+    "pallet_type",
+    "units_per_case",
+    "units_produced",
+    "sqrt_units",
+    "log_units",
+    "train_median_speed_uds_per_hour"
+  ],
+  "categorical_feats": [
+    "line_id",
+    "sku_id",
+    "container_type",
+    "brand",
+    "family",
+    "beer",
+    "primary_packaging",
+    "secondary_packaging",
+    "pallet_type",
+    "units_per_case"
+  ],
+  "numeric_feats": [
+    "units_produced",
+    "sqrt_units",
+    "log_units",
+    "train_median_speed_uds_per_hour"
+  ],
+  "cat_idx": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "global_speed_uds_per_hour": 74068.96136994651,
+  "n_train": 1766,
+  "n_iterations": 300,
+  "target": "effective_speed_uds_per_hour",
+  "inference_recovery": "predicted_hours = units_produced / predicted_speed",
+  "random_state": 42
+}

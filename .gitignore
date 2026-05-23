@@ -27,6 +27,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 *.log
+catboost_info/
 
 # ── Node / JS ─────────────────────────────────────────────────────────
 node_modules/

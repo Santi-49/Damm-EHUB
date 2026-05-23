@@ -1,0 +1,282 @@
+[
+  {
+    "fold": 1,
+    "model": "Baseline system",
+    "mae": 0.3314897281104199,
+    "rmse": 0.7890072818248247,
+    "median_ape": 0.039942331627015826
+  },
+  {
+    "fold": 1,
+    "model": "Baseline fair",
+    "mae": 0.4147471970471614,
+    "rmse": 0.8872927272898999,
+    "median_ape": 0.056734089378278243
+  },
+  {
+    "fold": 1,
+    "model": "Ridge (hours, with units)",
+    "mae": 0.44753966842321113,
+    "rmse": 0.8784913823192614,
+    "median_ape": 0.07093996505158412
+  },
+  {
+    "fold": 1,
+    "model": "LightGBM (hours)",
+    "mae": 0.7462345373705748,
+    "rmse": 3.6042344640433974,
+    "median_ape": 0.077342172025062
+  },
+  {
+    "fold": 1,
+    "model": "LightGBM [speed\u2192hours]",
+    "mae": 0.4491276526087289,
+    "rmse": 0.8748174676908255,
+    "median_ape": 0.07050004352730882
+  },
+  {
+    "fold": 1,
+    "model": "CatBoost (hours)",
+    "mae": 0.6078113764622717,
+    "rmse": 2.9016206506986855,
+    "median_ape": 0.05749680882781126
+  },
+  {
+    "fold": 1,
+    "model": "CatBoost [speed\u2192hours]",
+    "mae": 0.3876245994161306,
+    "rmse": 0.8482910398880475,
+    "median_ape": 0.05161118846984773
+  },
+  {
+    "fold": 1,
+    "model": "MLP torch (sku-embed + residual)",
+    "mae": 0.41958465896465624,
+    "rmse": 0.8904447156547911,
+    "median_ape": 0.05381655177198783
+  },
+  {
+    "fold": 2,
+    "model": "Baseline system",
+    "mae": 0.3195744220468282,
+    "rmse": 0.6853017917979437,
+    "median_ape": 0.04242771196402645
+  },
+  {
+    "fold": 2,
+    "model": "Baseline fair",
+    "mae": 0.3716102292452027,
+    "rmse": 0.7695025532273689,
+    "median_ape": 0.05368644937710023
+  },
+  {
+    "fold": 2,
+    "model": "Ridge (hours, with units)",
+    "mae": 0.398448502577049,
+    "rmse": 0.7633489177038479,
+    "median_ape": 0.06748217531794504
+  },
+  {
+    "fold": 2,
+    "model": "LightGBM (hours)",
+    "mae": 0.40149037832243545,
+    "rmse": 0.768415495838662,
+    "median_ape": 0.07133186890052103
+  },
+  {
+    "fold": 2,
+    "model": "LightGBM [speed\u2192hours]",
+    "mae": 0.39719661290645486,
+    "rmse": 0.7471649303200424,
+    "median_ape": 0.06370466679690055
+  },
+  {
+    "fold": 2,
+    "model": "CatBoost (hours)",
+    "mae": 0.49792917828911504,
+    "rmse": 1.6890919433182907,
+    "median_ape": 0.06503819009331445
+  },
+  {
+    "fold": 2,
+    "model": "CatBoost [speed\u2192hours]",
+    "mae": 0.35276322848528757,
+    "rmse": 0.6951571961503368,
+    "median_ape": 0.05444363871512418
+  },
+  {
+    "fold": 2,
+    "model": "MLP torch (sku-embed + residual)",
+    "mae": 0.38569024084973647,
+    "rmse": 0.7851753784408299,
+    "median_ape": 0.05886713302175256
+  },
+  {
+    "fold": 3,
+    "model": "Baseline system",
+    "mae": 0.3029523221045075,
+    "rmse": 0.6431477048021869,
+    "median_ape": 0.04226932199314004
+  },
+  {
+    "fold": 3,
+    "model": "Baseline fair",
+    "mae": 0.3952864668591168,
+    "rmse": 0.7607134350553101,
+    "median_ape": 0.060878567310826685
+  },
+  {
+    "fold": 3,
+    "model": "Ridge (hours, with units)",
+    "mae": 0.42298457408010953,
+    "rmse": 0.7339238066577902,
+    "median_ape": 0.07543633612549583
+  },
+  {
+    "fold": 3,
+    "model": "LightGBM (hours)",
+    "mae": 0.4794114982478003,
+    "rmse": 1.180315679184741,
+    "median_ape": 0.0817023988587868
+  },
+  {
+    "fold": 3,
+    "model": "LightGBM [speed\u2192hours]",
+    "mae": 0.41137861037824497,
+    "rmse": 0.7708120253538122,
+    "median_ape": 0.07394814190672076
+  },
+  {
+    "fold": 3,
+    "model": "CatBoost (hours)",
+    "mae": 0.4827314822566252,
+    "rmse": 1.1807441551419,
+    "median_ape": 0.07257312024588579
+  },
+  {
+    "fold": 3,
+    "model": "CatBoost [speed\u2192hours]",
+    "mae": 0.3525125766144575,
+    "rmse": 0.655512155287199,
+    "median_ape": 0.060156226228526566
+  },
+  {
+    "fold": 3,
+    "model": "MLP torch (sku-embed + residual)",
+    "mae": 0.3945145709151893,
+    "rmse": 0.7614504327201608,
+    "median_ape": 0.05990279826598047
+  },
+  {
+    "fold": 4,
+    "model": "Baseline system",
+    "mae": 0.3459892084141168,
+    "rmse": 0.7080592598067431,
+    "median_ape": 0.04640139028714514
+  },
+  {
+    "fold": 4,
+    "model": "Baseline fair",
+    "mae": 0.4191619082331631,
+    "rmse": 0.8217572537085591,
+    "median_ape": 0.05861328507221166
+  },
+  {
+    "fold": 4,
+    "model": "Ridge (hours, with units)",
+    "mae": 0.44541430068242077,
+    "rmse": 0.8859178003481776,
+    "median_ape": 0.06608538301611791
+  },
+  {
+    "fold": 4,
+    "model": "LightGBM (hours)",
+    "mae": 0.6795966613630408,
+    "rmse": 2.2603813238207273,
+    "median_ape": 0.07175293204288473
+  },
+  {
+    "fold": 4,
+    "model": "LightGBM [speed\u2192hours]",
+    "mae": 0.39626106209017486,
+    "rmse": 0.7132053104455132,
+    "median_ape": 0.0598426259809303
+  },
+  {
+    "fold": 4,
+    "model": "CatBoost (hours)",
+    "mae": 0.6605307311738812,
+    "rmse": 2.4096983819661886,
+    "median_ape": 0.06629540080465893
+  },
+  {
+    "fold": 4,
+    "model": "CatBoost [speed\u2192hours]",
+    "mae": 0.38555256456170417,
+    "rmse": 0.7435340968060542,
+    "median_ape": 0.05432556837583768
+  },
+  {
+    "fold": 4,
+    "model": "MLP torch (sku-embed + residual)",
+    "mae": 0.4186703744554273,
+    "rmse": 0.8170456657166598,
+    "median_ape": 0.05817849379203476
+  },
+  {
+    "fold": 5,
+    "model": "Baseline system",
+    "mae": 0.30248881625255875,
+    "rmse": 0.6242050543335598,
+    "median_ape": 0.04771000277266887
+  },
+  {
+    "fold": 5,
+    "model": "Baseline fair",
+    "mae": 0.36207301631963446,
+    "rmse": 0.7078721003849574,
+    "median_ape": 0.06373947893373264
+  },
+  {
+    "fold": 5,
+    "model": "Ridge (hours, with units)",
+    "mae": 0.3814713484933503,
+    "rmse": 0.7150107778007504,
+    "median_ape": 0.06917572331562924
+  },
+  {
+    "fold": 5,
+    "model": "LightGBM (hours)",
+    "mae": 0.40582666266267337,
+    "rmse": 0.7824626078909495,
+    "median_ape": 0.07115162439282509
+  },
+  {
+    "fold": 5,
+    "model": "LightGBM [speed\u2192hours]",
+    "mae": 0.3997332345645222,
+    "rmse": 0.7541695357961086,
+    "median_ape": 0.06406861837154967
+  },
+  {
+    "fold": 5,
+    "model": "CatBoost (hours)",
+    "mae": 0.5111966795409443,
+    "rmse": 1.216489169184864,
+    "median_ape": 0.07144511364260547
+  },
+  {
+    "fold": 5,
+    "model": "CatBoost [speed\u2192hours]",
+    "mae": 0.32917148443886707,
+    "rmse": 0.6334298356813711,
+    "median_ape": 0.0549370324517396
+  },
+  {
+    "fold": 5,
+    "model": "MLP torch (sku-embed + residual)",
+    "mae": 0.36782673497392954,
+    "rmse": 0.7102965053841787,
+    "median_ape": 0.06305934076303944
+  }
+]
