@@ -19,40 +19,43 @@ the canonical names so the lineage is one click away.
         │                                         │   (services/etl/)     │
         └──────────────────────────────────────►  └──────────┬────────────┘
                                                              │
-                ┌────────────────────────────────────────────┼─────────────────────────────────────┐
-                ▼                                            ▼                                     ▼
-       wo_master.csv (spine)                     skus.csv               wo_changeovers.csv  (raw flags)
-                │                                    │                              │
-                ├──────► line_capability.csv         │                              │
-                │                                    │                              │
-                ├──────► node_cost_train.csv  ◄──────┤                              │
-                │                                    │                              │
-                ├──────► edge_cost_train.csv  ◄──────┴──────────────────────────────┤
-                │                                                                   │
-                ├──────► demand.csv  (window-aggregated)                             │
-                │                                                                   │
-                └──────► incidents.csv  (simulator, M2)                             │
-                                                                                    │
-   data/raw/Tabla CF Prat 2026_14_17_19.xlsx  ────► line_calendar.csv               │
-                                              ────► changeover_costs.csv  ◄─────────┘
+                ┌────────────────────────────────────────────┼──────────────────────────────────┐
+                ▼                                            ▼                                  ▼
+       wo_master.csv (spine)                     skus.csv          wo_changeovers.csv (transitions)
+                │                                    │                        │
+                ├──────► line_capability.csv         │                        │ ← ML training input
+                │                                    │                        │   (empirical only)
+                ├──────► node_cost_train.csv  ◄──────┤                        │
+                │                                    │                        │
+                ├──────► demand.csv  (window-aggregated)                       │
+                │                                                              │
+                └──────► incidents.csv  (simulator, M2)                        │
+                                                                               │
+   data/raw/Tabla CF Prat 2026_14_17_19.xlsx  ────► line_calendar.csv          │
+                                              ────► changeover_costs.csv ◄──── │
+                                                    (optimizer floor only,      │
+                                                     NOT training data)  ←──────┘
 ```
 
 | # | Product | Role | Consumers | Status |
 |---|---|---|---|---|
 | 1 | [`wo_master`](./wo_master.md) | Master cleaned work-order table — the spine | Everyone | **MVP** |
 | 2 | [`skus`](./skus.md) | SKU catalogue (deduped attributes) | Everyone | **MVP** |
-| 3 | [`wo_changeovers`](./wo_changeovers.md) | Per-WO changeover-flag observations (raw) | `edge_cost_train` builder, drill-down UI | **MVP** |
+| 3 | [`wo_changeovers`](./wo_changeovers.md) | Transition master table (`sku_from → sku_to`) with empirical times + features | Changeover-ML (training), UI drill-down | **MVP** |
 | 4 | [`demand`](./demand.md) | Window-aggregated demand — single input to the optimiser | Optimiser | **MVP** |
 | 5 | [`line_capability`](./line_capability.md) | Hard `(sku, line) → can_produce + median speed/OEE` | Optimiser (hard gate + node cost fallback), simulator | **MVP** |
 | 6 | [`line_calendar`](./line_calendar.md) | Forced events per line (cleaning, maintenance, injected breakdowns) | Optimiser, simulator | **MVP** |
-| 7 | [`changeover_costs`](./changeover_costs.md) | Fused theoretical + empirical changeover hours | Optimiser (edge weights, ML floor) | **MVP** |
+| 7 | [`changeover_costs`](./changeover_costs.md) | Theoretical changeover matrix — optimizer floor for unseen pairs | Optimiser (edge weights floor / fallback) | **MVP** |
 | 8 | [`node_cost_train`](./node_cost_train.md) | Training table for production-time / speed model | (optional ML) | post-MVP |
-| 9 | [`edge_cost_train`](./edge_cost_train.md) | Training table for changeover model (segmented + total) | Changeover-ML | post-MVP |
-| 10 | [`incidents`](./incidents.md) | Deterministic-replay incident log | Simulator only | M2 (deferred) |
+| 9 | [`incidents`](./incidents.md) | Deterministic-replay incident log | Simulator only | M2 (deferred) |
 
-**MVP-1 of the optimiser** needs products 1–7. ML (8, 9) is post-MVP — until
-then, `changeover_costs.csv` carries theoretical-only values and the optimiser
-uses `line_capability.median_speed_uds_per_hour` for node cost.
+**MVP-1 of the optimiser** needs products 1–7. `node_cost_train` (8) is
+post-MVP — until then the optimiser uses
+`line_capability.median_speed_uds_per_hour` for node cost.
+
+**Changeover ML** trains directly on `wo_changeovers.csv` (product 3) —
+empirical transitions only. `changeover_costs.csv` is the optimizer's floor
+for pairs the ML has never seen; it is never a training input.
 
 ## Time window
 

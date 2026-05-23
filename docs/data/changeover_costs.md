@@ -72,8 +72,13 @@ wo_master.csv + wo_changeovers.csv
 
 ## Used by
 
-* **Optimiser** — `total_hours` is the edge weight in the m-TSP graph. The
-  segment columns are the **floor** the ML predictor must respect (the ML can
-  refine each segment but the floor stops it from predicting < theoretical).
-* **Changeover ML** — these rows are the "theoretical" fallback when the
-  trained model has insufficient support.
+* **Optimiser** — `total_hours` is the edge weight in the m-TSP graph for
+  MVP-1 (no ML). Once the ML model is active, `changeover_costs` provides the
+  **floor**: the optimizer clamps `max(theoretical_total, ml_prediction)` so
+  the ML can never predict below the physical minimum.
+* **Changeover ML inference** — fallback for `(line_id, sku_from_id, sku_to_id)`
+  triples the model has never seen in `wo_changeovers.csv`.
+
+> **NOT a training input.** The changeover ML model trains exclusively on
+> real observations in `wo_changeovers.csv`. Theoretical values from this table
+> must never be mixed into the training set.

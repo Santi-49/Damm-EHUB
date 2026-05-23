@@ -36,12 +36,17 @@ class ETLContract(Protocol):
 
     * ``wo_master.csv``           Master cleaned work-order table (one row per WO)
     * ``skus.csv``                SKU catalogue (one row per SKU)
-    * ``wo_changeovers.csv``      Per-WO changeover flags (raw observations)
+    * ``wo_changeovers.csv``      Transition master table — ``sku_from → sku_to`` pairs
+                                  derived from consecutive WOs (i → i+1) on the same
+                                  line, with empirical ``changeover_hours``, SKU
+                                  attributes for both sides, change flags, and context
+                                  features. This is the direct training input for the
+                                  changeover ML model (empirical observations only).
     * ``line_capability.csv``     Materialised ``(sku_id, line_id) -> can_produce + median speed/OEE``
     * ``line_calendar.csv``       Forced events per line (cleaning + maintenance)
-    * ``changeover_costs.csv``    Theoretical + empirical fused changeover hours
-    * ``node_cost_train.csv``     Training table for production-time / speed model
-    * ``edge_cost_train.csv``     Training table for changeover-time model (segmented + total)
+    * ``changeover_costs.csv``    Theoretical changeover matrix (optimizer floor for unseen
+                                  pairs; NOT used as ML training data)
+    * ``node_cost_train.csv``     [post-MVP] Training table for production-time / speed model
     * ``incidents.csv``           [M2, simulator] Replay log anchored to ``(line_id, start_ts)``
 
     Invariants:
@@ -50,11 +55,12 @@ class ETLContract(Protocol):
     * Discarded inputs (``data - 2026-05-18….xlsx``, ``Diario Hl_Planif.xlsx``)
       must be reported in ``ETLResult.discarded_files``.
     * Data-quality warnings (OEE > 1, ``total_hours`` outliers, ``quality`` != 1,
-      ambiguous ``empirical_changeover_h``, ...) must be surfaced in
+      ``changeover_hours < 0`` or ``> 24``, ...) must be surfaced in
       ``ETLResult.warnings`` — do NOT silently clip values.
-    * For every row of ``edge_cost_train.csv`` the invariant
-      ``sum(segment_hours) == total_changeover_hours`` must hold (or be flagged
-      explicitly in a ``segment_sum_error`` column for downstream inspection).
+    * ``wo_changeovers.csv`` must contain only real observed transitions — no
+      theoretical values from ``changeover_costs.csv`` are mixed in.
+    * A warning must be emitted for every ``wo_changeovers`` row where
+      ``|changeover_hours - cambios_hours| > 0.5`` (cross-validation mismatch).
     """
 
     async def build_clean_datasets(self, raw_dir: Path, out_dir: Path) -> ETLResult:

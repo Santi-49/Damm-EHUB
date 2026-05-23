@@ -84,8 +84,10 @@ Nine clean CSVs, all catalogued in [`docs/data/overview.md`](../data/overview.md
 [`line_calendar`](../data/line_calendar.md),
 [`changeover_costs`](../data/changeover_costs.md).
 
-**Post-MVP (ML):** [`node_cost_train`](../data/node_cost_train.md),
-[`edge_cost_train`](../data/edge_cost_train.md).
+**ML edge cost** — trains on [`wo_changeovers`](../data/wo_changeovers.md)
+(MVP product; empirical `sku_from → sku_to` transitions, no theoretical data).
+
+**Post-MVP (ML node cost):** [`node_cost_train`](../data/node_cost_train.md).
 
 **Simulator (M2, deferred):** [`incidents`](../data/incidents.md).
 

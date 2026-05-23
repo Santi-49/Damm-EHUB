@@ -16,17 +16,16 @@ that's this service.
 Read everything in `data/raw/*.xlsx` and emit the canonical data products
 documented in [`docs/data/overview.md`](../../docs/data/overview.md):
 
-| Output CSV | Doc | Status |
-|---|---|---|
-| `wo_master.csv` | [wo_master.md](../../docs/data/wo_master.md) | **MVP** |
-| `skus.csv` | [skus.md](../../docs/data/skus.md) | **MVP** |
-| `wo_changeovers.csv` | [wo_changeovers.md](../../docs/data/wo_changeovers.md) | **MVP** |
-| `line_capability.csv` | [line_capability.md](../../docs/data/line_capability.md) | **MVP** |
-| `line_calendar.csv` | [line_calendar.md](../../docs/data/line_calendar.md) | **MVP** |
-| `changeover_costs.csv` | [changeover_costs.md](../../docs/data/changeover_costs.md) | **MVP** |
-| `node_cost_train.csv` | [node_cost_train.md](../../docs/data/node_cost_train.md) | post-MVP |
-| `edge_cost_train.csv` | [edge_cost_train.md](../../docs/data/edge_cost_train.md) | post-MVP |
-| `incidents.csv` | [incidents.md](../../docs/data/incidents.md) | M2 (simulator) |
+| Output CSV | Doc | Status | Notes |
+|---|---|---|---|
+| `wo_master.csv` | [wo_master.md](../../docs/data/wo_master.md) | **MVP** | |
+| `skus.csv` | [skus.md](../../docs/data/skus.md) | **MVP** | |
+| `wo_changeovers.csv` | [wo_changeovers.md](../../docs/data/wo_changeovers.md) | **MVP** | Transition master: `sku_from → sku_to`, empirical `changeover_hours`, features. ML training source. |
+| `line_capability.csv` | [line_capability.md](../../docs/data/line_capability.md) | **MVP** | |
+| `line_calendar.csv` | [line_calendar.md](../../docs/data/line_calendar.md) | **MVP** | |
+| `changeover_costs.csv` | [changeover_costs.md](../../docs/data/changeover_costs.md) | **MVP** | Theoretical floor — optimizer only, NOT training data. |
+| `node_cost_train.csv` | [node_cost_train.md](../../docs/data/node_cost_train.md) | post-MVP | |
+| `incidents.csv` | [incidents.md](../../docs/data/incidents.md) | M2 (simulator) | |
 
 **Discard explicitly**:
 - `data - 2026-05-18T181640.542.xlsx` — duplicate of `OEE 14_17_19_ 2025.xlsx`.
@@ -76,7 +75,7 @@ services/etl/
 
 ## Definition of done
 
-- [ ] All seven MVP CSVs land in `data/clean/` and pass schema checks.
+- [ ] All seven MVP CSVs land in `data/clean/` and pass schema checks (`wo_master`, `skus`, `wo_changeovers`, `line_capability`, `line_calendar`, `changeover_costs`, `demand`).
 - [ ] `ETLResult.warnings` surfaces every documented data-quality flag (catalogue in [`cleaning_rules.md`](../../docs/data/cleaning_rules.md) §11).
 - [ ] Discarded files appear in `ETLResult.discarded_files`.
 - [ ] `build_demand("historico_2025", clean_dir, window=WindowConfig(days=7))` returns a non-empty tuple and round-trips through `to_csv`.
