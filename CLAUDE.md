@@ -8,19 +8,6 @@
 
 ---
 
-## Step 0 — Before Writing Any Code
-
-> **Self-removing:** Once `docs/challenge/` has no `TODO` banners and `## Challenge Context`
-> at the bottom of this file is filled in, delete this entire Step 0 section from both
-> `AGENTS.md` and `CLAUDE.md`. It has served its purpose.
-
-The files imported above are the source of truth for what is being built and why.
-If any still contain a `TODO` banner, run the **Context Clarification Protocol** in `AGENTS.md`
-before touching any code. After clarifying, update the docs and the `## Challenge Context`
-section at the bottom of this file.
-
----
-
 ## How Documentation Works
 
 ```
@@ -165,7 +152,66 @@ python .skills/design/ui-ux-pro-max/scripts/search.py "<query>" --domain typogra
 
 ## Challenge Context
 
-> **TODO** — Run the Context Clarification Protocol in `AGENTS.md` and replace this section.
->
-> Include: challenge name, core concept, selling point, MVP features, scope (which apps),
-> key constraints, team ownership, and demo deadline.
+**Challenge:** LineWise Operaciones — Damm × Engineering HUB. Optimise the weekly
+production sequence on the three Damm canning lines (L14, L17, L19) at El Prat.
+
+**Core concept (Architecture D):** model planning as **graph pathfinding** — nodes are
+SKU chunks (node cost = production time per line), edges are line-specific changeover
+times predicted by ML with the theoretical `Tabla CF Prat` matrix as floor.
+Three "vehicles" (lines) tour the nodes; OR-Tools VRP minimises **makespan** with
+disjunction penalties to handle infeasibility. OEE is never predicted — it is
+*computed* post-hoc by a deterministic simulator that replays real incidents.
+
+**Selling point:** *"We find the shortest path that covers all your weekly demand."*
+ML target is bounded (changeover hours, observable), comparison with `S_real` is fair
+(same incidents replayed), and capacity shortfalls drop the lowest-margin SKUs via
+the same objective — no emergency branch.
+
+**Hard capability constraints**:
+- L14 → 1/2 (50 cl) and 1/3 (33 cl)
+- L17 → 1/3 (33 cl) only
+- L19 → 1/2, 1/3, 2/5 (44 cl)
+
+**MVP features**:
+1. ETL → 8 clean CSVs in `data/clean/`
+2. Weekly demand dataset (`sku, semana, uds`) from history + JDA plan + what-if
+3. ML changeover predictor with walk-forward validation
+4. OR-Tools VRP optimiser (Arch D) with makespan objective + disjunctions
+5. Deterministic simulator with incident replay
+6. Web UI: Gantt per line, drill-down `week → day → transition`, what-if button
+
+**Scope — apps**: `apps/landing/` (pitch), `apps/web/` (demo surface).
+`apps/damm-mobile/` parked.
+
+**Five workspaces, five contracts** (full map in [`docs/functionalities/overview.md`](docs/functionalities/overview.md)):
+
+| Functionality | Folder | Contract |
+|---|---|---|
+| Data cleaning (ETL) | [`services/etl/`](services/etl/) | `ETLContract` |
+| Demand dataset gen | [`services/etl/`](services/etl/) | `DemandBuilderContract` |
+| ML changeover predictor | [`services/changeover-ml/`](services/changeover-ml/) | `ChangeoverModelContract` |
+| Graph optimiser (Arch D) | [`services/optimizer/`](services/optimizer/) | `GraphOptimizerContract` |
+| Simulator (deterministic OEE) | [`services/simulator/`](services/simulator/) | `SimulatorContract` |
+| UI (Gantt, drill-down, what-if) | [`apps/landing/`](apps/landing/), [`apps/web/`](apps/web/) | OpenAPI types |
+
+**Team (3 people, ~2 days)**:
+- Person 1 — Data & Simulator (ETL + simulator + `incident_log` replay + historical OEE validation)
+- Person 2 — Optimiser & ML (graph construction + ML edges + OR-Tools VRP + replan with disjunctions)
+- Person 3 — UI, analysis & demo (Streamlit/React Gantt + drill-down + what-if + storytelling)
+
+**Key constraints**:
+- Data is **confidential** — never commit anything under `data/`. `.gitignore` is set.
+- Demo must be end-to-end (interactive Gantt, not a static mock).
+- Re-plan latency target < 5 s on the demo week.
+- Arch A (greedy + rules) is kept as a fail-safe should OR-Tools integration slip.
+
+**Demo deadline:** TBD by the organiser. Milestones: M1 (Sat 13:00) ETL → M2 (Sat 19:00)
+simulator validated → M3 (Sat 22:00) Arch A fallback → M4 (Sun 14:00) Arch D
+integrated → M5 (Sun 16:00) what-if wired → M6 (Sun 18:00) dry-run.
+
+**Deep dives** (kept verbatim from the thought-process phase):
+- [`docs/linewise/datos.md`](docs/linewise/datos.md) — raw Excel inventory + joins + clean schema
+- [`docs/linewise/reto.md`](docs/linewise/reto.md) — problem framing, objective function, post-mortem methodology
+- [`docs/linewise/implementacion.md`](docs/linewise/implementacion.md) — Arch D vs alternatives, full justification
+- [`docs/linewise/resumen.md`](docs/linewise/resumen.md) — visual overview, Gantt, sync points
+- [`docs/linewise/cobertura_brief.md`](docs/linewise/cobertura_brief.md) — brief-by-brief coverage check

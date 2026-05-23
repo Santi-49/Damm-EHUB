@@ -2,7 +2,16 @@
 
 ## Architecture
 - [System Overview](architecture/overview.md) — services, request flow, component map
+- [LineWise (Arch D)](architecture/linewise.md) — graph-based optimiser + ML edges + simulator
 - [ADR 001 — Module Contract](architecture/adr/001-module-contract.md) — why the module boundary exists
+
+## LineWise (challenge)
+- [Functionality map](functionalities/overview.md) — five workspaces, owners, contracts
+- [Datos](linewise/datos.md) — raw Excel inventory, joins, clean schema
+- [Reto](linewise/reto.md) — problem statement, objective function, post-mortem methodology
+- [Implementación](linewise/implementacion.md) — Arch D deep dive vs alternatives
+- [Resumen](linewise/resumen.md) — visual overview, Gantt, sync points
+- [Cobertura brief](linewise/cobertura_brief.md) — brief-by-brief coverage check
 
 ## Backend
 - [Backend Overview](backend/overview.md) — stack, folder structure, how to run
