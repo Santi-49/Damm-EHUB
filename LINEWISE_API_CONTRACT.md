@@ -238,6 +238,7 @@ Used by the What-if page after a perturbation.
 ```ts
 type ReplanRequest = {
   scenario_id: string
+  introduced_at?: string
   urgent_sku?: string
   urgent_units?: number
   breakdown_line?: 14 | 17 | 19
@@ -245,6 +246,9 @@ type ReplanRequest = {
   breakdown_hours?: number
 }
 ```
+
+`introduced_at` is the ISO timestamp when the planner learns about the perturbation.
+The backend should replan from this point onward.
 
 Current frontend scenario IDs:
 
