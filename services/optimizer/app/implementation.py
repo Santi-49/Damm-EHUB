@@ -38,6 +38,12 @@ if str(_GRAPH_DIR) not in sys.path:
     sys.path.insert(0, str(_GRAPH_DIR))
 
 from line_partitioner import PartitionResult, partition_from_graph  # noqa: E402
+from what_if import (  # noqa: E402
+    UrgentDemandResult,
+    WhatIfResult,
+    what_if_breakdown,
+    what_if_urgent_demand,
+)
 
 
 DEFAULT_TIME_BUDGET_S = 4.0
@@ -49,6 +55,7 @@ DEFAULT_MAX_NO_IMPROVE = 20
 DEFAULT_SEQUENCE_BUDGET_S = 0.05
 DEFAULT_SEED = 42
 PLANT_START_HOUR = 6
+_MISSING_URGENT_EDGE_HOURS = 8.0
 
 
 @dataclass(frozen=True)
@@ -128,6 +135,175 @@ def optimize_graph(
         max_no_improve=max_no_improve,
     )
     return _adapt_partition_result(partition, line_ids_t)
+
+
+def replan_graph(
+    graph: nx.MultiDiGraph,
+    *,
+    breakdown_hours: float,
+    affected_line: int,
+    maintenance_hours: float,
+    line_ids: Iterable[int] = LINE_IDS,
+    time_budget_s: float = DEFAULT_TIME_BUDGET_S,
+    sequence_budget_s: float = DEFAULT_SEQUENCE_BUDGET_S,
+    move_strategy: str = DEFAULT_MOVE_STRATEGY,
+    delta_balance_h: float = DEFAULT_BALANCE_DELTA_H,
+    eps: float = DEFAULT_EPS,
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    max_no_improve: int = DEFAULT_MAX_NO_IMPROVE,
+    seed: int = DEFAULT_SEED,
+) -> tuple[OptimizerResult, WhatIfResult]:
+    """Run a breakdown what-if scenario on a planning graph.
+
+    Runs the baseline partitioner once, then re-plans the remainder of the
+    week with the affected line offline for ``maintenance_hours`` starting
+    at ``breakdown_hours`` hours into the plan.
+
+    Returns the baseline OptimizerResult (for the original plan display) and
+    the WhatIfResult (for the replanned Gantt).
+    """
+    line_ids_t = tuple(int(l) for l in line_ids)
+    common_kw: dict[str, Any] = dict(
+        seed=seed,
+        time_budget_s=time_budget_s,
+        sequence_budget_s=sequence_budget_s,
+        move_strategy=move_strategy,
+        delta_balance_h=delta_balance_h,
+        eps=eps,
+        max_iterations=max_iterations,
+        max_no_improve=max_no_improve,
+    )
+
+    baseline_partition = partition_from_graph(graph, line_ids=line_ids_t, **common_kw)
+    baseline_result = _adapt_partition_result(baseline_partition, line_ids_t)
+
+    def can_produce(sku: str, line: int) -> bool:
+        return line in graph.nodes[sku].get("line_data", {})
+
+    def node_cost(sku: str, line: int) -> float:
+        ld = graph.nodes[sku].get("line_data", {}).get(line)
+        return float(ld["predicted_hours"]) if ld is not None else 999.0
+
+    def edge_cost(a: str, b: str, line: int) -> float:
+        if a == b:
+            return 0.0
+        d = graph.get_edge_data(a, b, key=line)
+        return float(d["hours"]) if d is not None else 999.0
+
+    units_by_sku = {s: int(graph.nodes[s].get("units_demanded", 0)) for s in graph.nodes}
+    week_id = str(graph.graph.get("window_id", ""))
+
+    wif = what_if_breakdown(
+        baseline_partition,
+        breakdown_hours=breakdown_hours,
+        affected_line=affected_line,
+        maintenance_hours=maintenance_hours,
+        sku_ids=list(graph.nodes),
+        line_ids=list(line_ids_t),
+        can_produce=can_produce,
+        edge_cost=edge_cost,
+        node_cost=node_cost,
+        units_by_sku=units_by_sku,
+        week_id=week_id,
+        **common_kw,
+    )
+
+    return baseline_result, wif
+
+
+def replan_urgent_demand_graph(
+    graph: nx.MultiDiGraph,
+    *,
+    urgent_sku: str,
+    urgent_units: int,
+    introduced_at_hours: float,
+    required_by_hours: float,
+    line_ids: Iterable[int] = LINE_IDS,
+    capability_df: pd.DataFrame | None = None,
+    time_budget_s: float = DEFAULT_TIME_BUDGET_S,
+    sequence_budget_s: float = DEFAULT_SEQUENCE_BUDGET_S,
+    move_strategy: str = DEFAULT_MOVE_STRATEGY,
+    delta_balance_h: float = DEFAULT_BALANCE_DELTA_H,
+    eps: float = DEFAULT_EPS,
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    max_no_improve: int = DEFAULT_MAX_NO_IMPROVE,
+    seed: int = DEFAULT_SEED,
+) -> tuple[OptimizerResult, UrgentDemandResult, nx.MultiDiGraph]:
+    """Run an urgent-demand what-if scenario on a planning graph.
+
+    The baseline plan is solved on the original graph. The urgent order is
+    then added to a copied graph as a distinct demand node, so extra volume
+    for an SKU already present in the week does not overwrite the baseline
+    demand node.
+    """
+    line_ids_t = tuple(int(l) for l in line_ids)
+    common_kw: dict[str, Any] = dict(
+        seed=seed,
+        time_budget_s=time_budget_s,
+        sequence_budget_s=sequence_budget_s,
+        move_strategy=move_strategy,
+        delta_balance_h=delta_balance_h,
+        eps=eps,
+        max_iterations=max_iterations,
+        max_no_improve=max_no_improve,
+    )
+
+    baseline_partition = partition_from_graph(graph, line_ids=line_ids_t, **common_kw)
+    baseline_result = _adapt_partition_result(baseline_partition, line_ids_t)
+    augmented_graph, urgent_node = _graph_with_urgent_node(
+        graph,
+        urgent_sku=urgent_sku,
+        urgent_units=urgent_units,
+        capability_df=capability_df,
+    )
+
+    def can_produce(sku: str, line: int) -> bool:
+        return line in augmented_graph.nodes[sku].get("line_data", {})
+
+    def node_cost(sku: str, line: int) -> float:
+        ld = augmented_graph.nodes[sku].get("line_data", {}).get(line)
+        return float(ld["predicted_hours"]) if ld is not None else 999.0
+
+    def edge_cost(a: str, b: str, line: int) -> float:
+        if a == b:
+            return 0.0
+        base_a = _base_sku_for_edge(augmented_graph, a)
+        base_b = _base_sku_for_edge(augmented_graph, b)
+        if base_a == base_b:
+            return 0.0
+
+        for src, dst in ((a, b), (base_a, base_b)):
+            if not (augmented_graph.has_node(src) and augmented_graph.has_node(dst)):
+                continue
+            edge_data = augmented_graph.get_edge_data(src, dst, key=line)
+            if edge_data is not None:
+                return float(edge_data.get("hours", _MISSING_URGENT_EDGE_HOURS))
+        return _MISSING_URGENT_EDGE_HOURS
+
+    units_by_sku = {
+        str(s): int(augmented_graph.nodes[s].get("units_demanded", 0))
+        for s in augmented_graph.nodes
+    }
+    week_id = str(graph.graph.get("window_id", ""))
+
+    urgent = what_if_urgent_demand(
+        baseline_partition,
+        introduced_at_hours=introduced_at_hours,
+        required_by_hours=required_by_hours,
+        urgent_sku=urgent_sku,
+        urgent_node=urgent_node,
+        urgent_units=urgent_units,
+        sku_ids=list(graph.nodes),
+        line_ids=list(line_ids_t),
+        can_produce=can_produce,
+        edge_cost=edge_cost,
+        node_cost=node_cost,
+        units_by_sku=units_by_sku,
+        week_id=week_id,
+        **common_kw,
+    )
+
+    return baseline_result, urgent, augmented_graph
 
 
 def optimize_window(window_id: str, **kwargs: Any) -> OptimizerResult:
@@ -344,6 +520,8 @@ __all__ = [
     "GraphOptimizer",
     "LineRoute",
     "OptimizerResult",
+    "WhatIfResult",
     "optimize_graph",
     "optimize_window",
+    "replan_graph",
 ]

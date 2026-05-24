@@ -28,7 +28,9 @@ from services.optimizer.app.graph_builder import (
 )
 from services.optimizer.app.implementation import (
     OptimizerResult,
+    WhatIfResult,
     optimize_graph,
+    replan_graph,
 )
 
 from app.schemas.linewise import (
@@ -41,6 +43,9 @@ from app.schemas.linewise import (
     PlanGraphNode,
     PlanOptimizeRequest,
     PlanOptimizeResponse,
+    ReplanRecommendation,
+    ReplanRequest,
+    ReplanScenario,
     Sequence,
     SimulationReport,
     Slot,
@@ -374,12 +379,337 @@ class LinewiseOrchestrator:
             dropped_skus=list(result.dropped),
         )
 
+    # ------------------------------------------------------------------
+    # 4. Replan after a line breakdown
+    # ------------------------------------------------------------------
+
+    def replan(self, request: ReplanRequest) -> ReplanScenario:
+        """Re-plan the remainder of the week after a line breakdown."""
+        if request.breakdown_line is None:
+            raise ValueError("breakdown_line is required for a breakdown scenario")
+        if request.breakdown_day is None:
+            raise ValueError("breakdown_day is required")
+
+        maintenance_h = float(request.breakdown_hours or 8.0)
+        demand = self._get_demand()
+        capability = self._get_capability()
+
+        # Locate the planning window that contains the breakdown date
+        breakdown_date = pd.Timestamp(request.breakdown_day)
+        mask = (
+            pd.to_datetime(demand["window_start"]) <= breakdown_date
+        ) & (
+            pd.to_datetime(demand["window_end"]) >= breakdown_date
+        )
+        matching = demand[mask]
+        if matching.empty:
+            raise KeyError(
+                f"No planning window found for date {request.breakdown_day!r}"
+            )
+
+        row0 = matching.iloc[0]
+        week_id = str(row0["window_id"])
+        w_start = pd.Timestamp(row0["window_start"])
+        w_end = pd.Timestamp(row0["window_end"])
+        solution_id = str(uuid.uuid4())
+
+        graph = build_planning_graph(week_id, demand_df=demand, capability_df=capability)
+        if graph.number_of_nodes() == 0:
+            raise ValueError(f"No demand nodes found for window {week_id!r}")
+
+        # Breakdown offset: hours from plan start (Monday 06:00) to breakdown day 06:00
+        plan_start_dt = datetime(
+            w_start.year, w_start.month, w_start.day, PLANT_START_HOUR
+        )
+        breakdown_dt = datetime(
+            breakdown_date.year, breakdown_date.month, breakdown_date.day, PLANT_START_HOUR
+        )
+        breakdown_offset_h = max(
+            0.0, (breakdown_dt - plan_start_dt).total_seconds() / 3600.0
+        )
+
+        baseline_result, wif = replan_graph(
+            graph,
+            breakdown_hours=breakdown_offset_h,
+            affected_line=int(request.breakdown_line),
+            maintenance_hours=maintenance_h,
+        )
+
+        base_seq = _opt_result_to_sequence(
+            baseline_result, graph, week_id, w_start, w_end, solution_id
+        )
+        base_report = _opt_simulation_report(
+            base_seq.id, baseline_result, graph, demand, week_id, capability
+        )
+
+        replan_seq = _wif_to_sequence(wif, graph, week_id, w_start, solution_id)
+        replan_report = _wif_simulation_report(
+            wif, graph, demand, week_id, capability, solution_id
+        )
+
+        affected_l = int(request.breakdown_line)
+        moved_n = len(wif.moved_skus)
+        stranded_n = len(wif.stranded_on_affected)
+        delta_h = wif.makespan_hours - wif.original_makespan_hours
+
+        constraints: list[str] = []
+        if stranded_n:
+            constraints.append(
+                f"{stranded_n} SKU(s) are format-locked to L{affected_l} "
+                f"and will resume after maintenance."
+            )
+        if moved_n:
+            constraints.append(
+                f"{moved_n} SKU(s) redistributed across other lines."
+            )
+
+        recommendation = ReplanRecommendation(
+            headline=(
+                f"L{affected_l} offline {maintenance_h:.0f}h — "
+                f"makespan {delta_h:+.1f}h vs baseline"
+            ),
+            why=(
+                f"L{affected_l} breaks at hour {breakdown_offset_h:.0f} of the plan "
+                f"({request.breakdown_day}). After {maintenance_h:.0f}h maintenance, "
+                f"{moved_n} SKU(s) were redistributed to minimise makespan."
+                + (
+                    f" {stranded_n} SKU(s) are format-locked to L{affected_l} "
+                    f"and will wait for the line to come back."
+                    if stranded_n
+                    else ""
+                )
+            ),
+            constraints=constraints,
+        )
+
+        return ReplanScenario(
+            id=f"replan-{solution_id[:8]}",
+            label=f"L{affected_l} breakdown · {maintenance_h:.0f}h maintenance",
+            description=(
+                f"L{affected_l} fails at ~{breakdown_offset_h:.0f}h into the week "
+                f"({request.breakdown_day}). After {maintenance_h:.0f}h repair the "
+                f"plan is re-optimised. New makespan: {wif.makespan_hours:.1f}h "
+                f"(baseline {wif.original_makespan_hours:.1f}h)."
+            ),
+            recommendation=recommendation,
+            sequence=replan_seq,
+            report=replan_report,
+            base=base_report,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Module-level singleton
 # ---------------------------------------------------------------------------
 
 orchestrator = LinewiseOrchestrator()
+
+
+# ---------------------------------------------------------------------------
+# Helper: what-if sequence + report builders
+# ---------------------------------------------------------------------------
+
+def _wif_to_sequence(
+    wif: WhatIfResult,
+    graph: nx.MultiDiGraph,
+    week_id: str,
+    w_start: pd.Timestamp,
+    solution_id: str,
+) -> Sequence:
+    """Build a committed+maintenance+residual Sequence from a WhatIfResult."""
+    seq_id = f"replan-{solution_id[:8]}"
+    slots: list[Slot] = []
+    base_ts = datetime(w_start.year, w_start.month, w_start.day, PLANT_START_HOUR, 0, 0)
+
+    for line in LINE_IDS:
+        # --- Committed prefix (same order as baseline plan) ---
+        committed = tuple(str(s) for s in wif.committed_per_line.get(line, ()))
+        cursor = base_ts
+        for i, sku in enumerate(committed):
+            nd = graph.nodes.get(sku, {})
+            prod_h = _safe_float(
+                nd.get("line_data", {}).get(line, {}).get("predicted_hours", 0.0)
+            )
+            prod_end = cursor + timedelta(hours=prod_h)
+            slots.append(
+                Slot(
+                    id=f"replan-L{line}-c{i}",
+                    line=line,  # type: ignore[arg-type]
+                    start=cursor.isoformat(),
+                    end=prod_end.isoformat(),
+                    kind="production",
+                    sku=sku,
+                    label=sku,
+                    units=int(nd.get("units_demanded", 0)),
+                )
+            )
+            cursor = prod_end
+            if i < len(committed) - 1:
+                next_sku = str(committed[i + 1])
+                edge_data = graph.get_edge_data(sku, next_sku, key=line)
+                co_h = _safe_float(edge_data.get("hours", 0.0)) if edge_data else 0.0
+                if co_h > 0:
+                    slots.append(
+                        Slot(
+                            id=f"replan-L{line}-cco{i}",
+                            line=line,  # type: ignore[arg-type]
+                            start=cursor.isoformat(),
+                            end=(cursor + timedelta(hours=co_h)).isoformat(),
+                            kind="changeover",
+                            changeover_h=co_h,
+                            changeover_source="teorico",
+                        )
+                    )
+                    cursor += timedelta(hours=co_h)
+
+        # --- Maintenance slot (affected line only) ---
+        if line == wif.affected_line:
+            maint_start = base_ts + timedelta(hours=wif.breakdown_hours)
+            maint_end = maint_start + timedelta(hours=wif.maintenance_hours)
+            slots.append(
+                Slot(
+                    id=f"replan-L{line}-maint",
+                    line=line,  # type: ignore[arg-type]
+                    start=maint_start.isoformat(),
+                    end=maint_end.isoformat(),
+                    kind="maintenance",
+                )
+            )
+
+        # --- Residual sequence (anchored to baseline_hours_per_line) ---
+        cursor = base_ts + timedelta(hours=wif.baseline_hours_per_line[line])
+        new_seq = tuple(str(s) for s in wif.new_sequences.get(line, ()))
+        for i, sku in enumerate(new_seq):
+            nd = graph.nodes.get(sku, {})
+            prod_h = _safe_float(
+                nd.get("line_data", {}).get(line, {}).get("predicted_hours", 0.0)
+            )
+            prod_end = cursor + timedelta(hours=prod_h)
+            slots.append(
+                Slot(
+                    id=f"replan-L{line}-r{i}",
+                    line=line,  # type: ignore[arg-type]
+                    start=cursor.isoformat(),
+                    end=prod_end.isoformat(),
+                    kind="production",
+                    sku=sku,
+                    label=sku,
+                    units=int(nd.get("units_demanded", 0)),
+                )
+            )
+            cursor = prod_end
+            if i < len(new_seq) - 1:
+                next_sku = str(new_seq[i + 1])
+                edge_data = graph.get_edge_data(sku, next_sku, key=line)
+                co_h = _safe_float(edge_data.get("hours", 0.0)) if edge_data else 0.0
+                if co_h > 0:
+                    slots.append(
+                        Slot(
+                            id=f"replan-L{line}-rco{i}",
+                            line=line,  # type: ignore[arg-type]
+                            start=cursor.isoformat(),
+                            end=(cursor + timedelta(hours=co_h)).isoformat(),
+                            kind="changeover",
+                            changeover_h=co_h,
+                            changeover_source="teorico",
+                        )
+                    )
+                    cursor += timedelta(hours=co_h)
+
+    return Sequence(
+        id=seq_id,
+        week_id=week_id,
+        week_start=w_start.date().isoformat(),
+        week_end=(w_start + timedelta(days=6)).date().isoformat(),
+        source="replan",
+        slots=slots,
+    )
+
+
+def _wif_simulation_report(
+    wif: WhatIfResult,
+    graph: nx.MultiDiGraph,
+    demand: pd.DataFrame,
+    week_id: str,
+    capability: pd.DataFrame,
+    solution_id: str,
+) -> SimulationReport:
+    """Build a SimulationReport from a WhatIfResult."""
+    seq_id = f"replan-{solution_id[:8]}"
+    week_demand = demand[demand["window_id"] == week_id]
+    total_demanded = int(week_demand["units_demanded"].sum())
+
+    cap_oee: dict[int, float] = {}
+    for line in LINE_IDS:
+        cap_line = capability[(capability["line_id"] == line) & capability["can_produce"]]
+        cap_oee[line] = (
+            float(cap_line["median_oee"].median()) if not cap_line.empty else 0.5
+        )
+    global_oee = float(
+        capability[capability["can_produce"]]["median_oee"].median()
+        if not capability.empty
+        else 0.5
+    )
+
+    all_covered: set[str] = set()
+    for line in LINE_IDS:
+        for sku in wif.committed_per_line.get(line, ()):
+            all_covered.add(str(sku))
+        for sku in wif.new_sequences.get(line, ()):
+            all_covered.add(str(sku))
+
+    covered_units = 0
+    dropped_sku_list: list[DroppedSku] = []
+    for _, row in week_demand.iterrows():
+        sku = str(row["sku_id"])
+        units_dem = int(row["units_demanded"])
+        if sku not in all_covered:
+            dropped_sku_list.append(
+                DroppedSku(
+                    sku=sku,
+                    units_demanded=units_dem,
+                    units_dropped=units_dem,
+                    margin_lost=0.0,
+                    reason="breakdown_capacity",
+                )
+            )
+        else:
+            covered_units += units_dem
+
+    coverage = covered_units / total_demanded if total_demanded > 0 else 1.0
+
+    line_metrics_list: list[LineMetrics] = []
+    total_prod_h = 0.0
+    total_co_h = 0.0
+    for line in LINE_IDS:
+        h_prod = _safe_float(wif.residual_production_hours_per_line.get(line, 0.0))
+        h_co = _safe_float(wif.residual_changeover_hours_per_line.get(line, 0.0))
+        h_maint = wif.maintenance_hours if line == wif.affected_line else 0.0
+        line_metrics_list.append(
+            LineMetrics(
+                line=line,  # type: ignore[arg-type]
+                oee=round(cap_oee.get(line, global_oee), 4),
+                h_productive=round(h_prod, 2),
+                h_changeover=round(h_co, 2),
+                h_cleaning=8.0,
+                h_maintenance=round(h_maint, 2),
+                h_idle=0.0,
+                coverage=round(coverage, 4),
+            )
+        )
+        total_prod_h += h_prod
+        total_co_h += h_co
+
+    return SimulationReport(
+        sequence_id=seq_id,
+        oee_global=round(global_oee, 4),
+        oee_per_line=line_metrics_list,
+        h_changes=round(total_co_h, 2),
+        h_productive=round(total_prod_h, 2),
+        coverage=round(coverage, 4),
+        makespan_h=round(_safe_float(wif.makespan_hours), 2),
+        dropped_skus=dropped_sku_list,
+    )
 
 
 # ---------------------------------------------------------------------------

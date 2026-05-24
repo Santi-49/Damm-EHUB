@@ -166,3 +166,34 @@ class PlanOptimizeResponse(BaseModel):
     h_saved: float
     coverage_pct: float
     dropped_skus: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Replan what-if (endpoint 4)
+# ---------------------------------------------------------------------------
+
+class ReplanRequest(BaseModel):
+    scenario_id: str = "breakdown"
+    breakdown_line: Optional[LineId] = None
+    breakdown_day: Optional[str] = None  # ISO date "YYYY-MM-DD"
+    breakdown_hours: Optional[float] = None  # maintenance duration in hours
+    introduced_at: Optional[str] = None
+    urgent_sku: Optional[str] = None
+    urgent_units: Optional[int] = None
+
+
+class ReplanRecommendation(BaseModel):
+    headline: str
+    why: str
+    constraints: list[str]
+    assigned_line: Optional[LineId] = None
+
+
+class ReplanScenario(BaseModel):
+    id: str
+    label: str
+    description: str
+    recommendation: ReplanRecommendation
+    sequence: Sequence
+    report: SimulationReport
+    base: SimulationReport

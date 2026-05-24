@@ -1,9 +1,9 @@
-"""LineWise chat endpoint — LangChain + Anthropic Claude.
+"""LineWise chat endpoint — LangChain + OpenAI.
 
 Flow per turn:
   1. Frontend POSTs a ChatRequest (history + scope + user_message).
   2. We turn that into LangChain messages, prepend a system prompt with the
-     LineWise domain primer, and call ChatAnthropic.ainvoke.
+     LineWise domain primer, and call ChatOpenAI.ainvoke.
   3. Return the assistant text in ChatResponse.
 
 The frontend holds the conversation history in localStorage, so this endpoint
@@ -11,7 +11,7 @@ is stateless — every call is the full conversation. Once we ground on the
 real ExplanationPack we'll add the grounding payload to the system prompt
 (see ChatRequest.grounding, optional).
 
-If ``ANTHROPIC_API_KEY`` is empty we fall back to a canned reply so the demo
+If ``OPENAI_API_KEY`` is empty we fall back to a canned reply so the demo
 still works without a key.
 """
 
@@ -20,8 +20,12 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException, status
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:  # pragma: no cover - only hit when dependencies are stale
+    ChatOpenAI = None  # type: ignore[assignment]
 
 from app.core.config import settings
 from app.schemas.linewise_chat import ChatRequest, ChatResponse
@@ -68,7 +72,9 @@ def _to_lc_messages(req: ChatRequest) -> list[SystemMessage | HumanMessage | AIM
             )
         )
     elif req.scope and req.scope.view:
-        messages.append(SystemMessage(content=f"User is currently on the '{req.scope.view}' view."))
+        messages.append(
+            SystemMessage(content=f"User is currently on the '{req.scope.view}' view.")
+        )
 
     for msg in req.history:
         if msg.role == "user":
@@ -85,21 +91,29 @@ def _to_lc_messages(req: ChatRequest) -> list[SystemMessage | HumanMessage | AIM
 async def chat(req: ChatRequest) -> ChatResponse:
     # No key? Return a clear placeholder so the frontend's "Backend" badge
     # still lights up but the user knows wiring is incomplete.
-    if not settings.anthropic_api_key:
+    if not settings.openai_api_key:
         return ChatResponse(
             assistant_message=(
-                "Chat backend is reachable but no ANTHROPIC_API_KEY is configured. "
-                "Set it in services/api/.env and restart the API to start getting real answers."
+                "Chat backend is reachable but no OPENAI_API_KEY is configured. "
+                "Set it in the repo-root .env and restart the API to start getting real answers."
             ),
             referenced=[],
         )
 
-    llm = ChatAnthropic(
-        model_name=settings.chat_model,
-        max_tokens_to_sample=settings.chat_max_tokens,
-        api_key=settings.anthropic_api_key,
+    if ChatOpenAI is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "langchain-openai is not installed. "
+                "Run pip install -e services/api or rebuild the API image."
+            ),
+        )
+
+    llm = ChatOpenAI(
+        model=settings.chat_model,
+        max_tokens=settings.chat_max_tokens,
+        api_key=settings.openai_api_key,
         timeout=30,
-        stop=None,
     )
 
     messages = _to_lc_messages(req)

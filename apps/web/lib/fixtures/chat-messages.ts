@@ -32,7 +32,7 @@ export const chatSeedWhatIf: ChatMessage[] = [
 
 const FALLBACK_REPLIES: Record<string, string[]> = {
   plan: [
-    "I'd ground that in the explanation pack, but the chat API isn't wired up yet — once the backend exposes /api/chat I'll answer from the structured facts.",
+    "The live assistant is unavailable, so I'm on the local fallback. With the backend connected, I'd ground this in the explanation pack and quote the exact slot facts.",
     "Good question. In the placeholder build I can only echo seeded turns; the live answer would cite the slot's rationale tags and SHAP-style drivers from the pack.",
     "Once the optimiser is producing an ExplanationPack I'll point at the exact transition that drives this. Right now I'm running on fixtures.",
   ],
@@ -41,7 +41,7 @@ const FALLBACK_REPLIES: Record<string, string[]> = {
     "Placeholder reply — the real chat will surface every transition where vs_baseline = 'avoided_in_opt' and explain the saving.",
   ],
   'what-if': [
-    "When the replan endpoint exists I'll narrate what changed after your perturbation: dropouts, reroutes, new bottleneck. Right now I can't process the form on my own.",
+    "When the backend is reachable I'll narrate what changed after your perturbation: dropouts, reroutes, and the new bottleneck. Right now this is the local fallback.",
     "Once you submit a perturbation the backend will build a fresh pack and I'll diff it against the original. Currently this input is a stub.",
   ],
   insights: [

@@ -1,14 +1,12 @@
 'use client'
 
-// Placeholder LineWise chat panel.
+// LineWise chat panel.
 //
 // Behaviour:
 //   1. Renders any `seedMessages` as the opening turns (the "intro" the LLM
 //      would generate from the ExplanationPack once the backend is wired up).
-//   2. On send, POSTs a real ChatRequest shape to /api/chat. The endpoint does
-//      not exist yet — every call therefore 404s and we fall back to a
-//      scope-aware canned reply from chat-messages.ts. The fetch path is kept
-//      so wiring the real backend later is a no-code-change swap.
+//   2. On send, POSTs a ChatRequest to /api/v1/linewise/chat. If the backend
+//      is unavailable, the API client falls back to a scope-aware canned reply.
 //   3. Tracks a loading state ("typing" dots) while the request is in flight.
 //
 // The component does NOT manage cross-page conversation persistence — each

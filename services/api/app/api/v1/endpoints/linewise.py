@@ -12,6 +12,8 @@ from app.schemas.linewise import (
     CompareBundle,
     PlanOptimizeRequest,
     PlanOptimizeResponse,
+    ReplanRequest,
+    ReplanScenario,
     WeekOption,
 )
 from app.services.linewise_orchestrator import orchestrator
@@ -60,5 +62,27 @@ async def optimize_plan(body: PlanOptimizeRequest) -> PlanOptimizeResponse:
         raise HTTPException(status_code=422, detail="products list must not be empty")
     try:
         return orchestrator.optimize(body)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# 4. What-if replan after a line breakdown
+# ---------------------------------------------------------------------------
+
+@router.post("/replan", response_model=ReplanScenario)
+async def replan_scenario(body: ReplanRequest) -> ReplanScenario:
+    """Re-plan the remainder of the week after a line goes offline for maintenance."""
+    if body.breakdown_line is None or body.breakdown_day is None:
+        raise HTTPException(
+            status_code=422,
+            detail="breakdown_line and breakdown_day are required",
+        )
+    try:
+        return orchestrator.replan(body)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
