@@ -196,7 +196,9 @@ class LinewiseOrchestrator:
         planning_graph = build_planning_graph(
             week_id, demand_df=demand, capability_df=capability
         )
-        opt_result = optimize_graph(planning_graph)
+        opt_result = optimize_graph(
+            planning_graph, max_iterations=5, max_exact_nodes=15
+        )
         opt_seq = _opt_result_to_sequence(
             opt_result, planning_graph, week_id, w_start, w_end, solution_id
         )
@@ -266,7 +268,7 @@ class LinewiseOrchestrator:
                 dropped_skus=[p.sku_id for p in request.products],
             )
 
-        result = optimize_graph(graph)
+        result = optimize_graph(graph, max_iterations=5, max_exact_nodes=15)
 
         # SKU metadata
         sku_family: dict[str, str] = {}

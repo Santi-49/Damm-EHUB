@@ -9,6 +9,7 @@ Outputs:
 * ``services/optimizer/reports/optimizer_v2_report.md``
 * ``services/optimizer/reports/optimizer_v2_weekly_comparison.csv``
 * ``services/optimizer/reports/optimizer_v2_line_comparison.csv``
+* ``services/optimizer/reports/optimizer_v2_makespan_comparison.csv``
 """
 
 from __future__ import annotations
@@ -60,7 +61,7 @@ def generate_report(
     reports_dir: Path = REPORTS_DIR,
     windows: Iterable[str] | None = None,
     config: ReportConfig = ReportConfig(),
-) -> tuple[Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path]:
     """Run optimizer v2 for every requested week and write report artefacts."""
 
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -72,6 +73,7 @@ def generate_report(
 
     weekly_rows: list[dict[str, object]] = []
     line_rows: list[dict[str, object]] = []
+    makespan_rows: list[dict[str, object]] = []
 
     started_at = perf_counter()
     for index, window_id in enumerate(selected_windows, start=1):
@@ -236,6 +238,17 @@ def generate_report(
                 ),
             })
 
+        makespan_rows.append(
+            _requested_makespan_comparison_row(
+                window_id=window_id,
+                graph=graph,
+                result=result,
+                real_by_line=real_by_line,
+                validation=validation,
+                elapsed_seconds=elapsed,
+            )
+        )
+
         print(
             f"[{index}/{len(selected_windows)}] {window_id}: "
             f"valid={validation.is_valid} "
@@ -245,24 +258,28 @@ def generate_report(
 
     weekly = pd.DataFrame(weekly_rows)
     lines = pd.DataFrame(line_rows)
+    makespan = pd.DataFrame(makespan_rows)
 
     weekly_path = reports_dir / "optimizer_v2_weekly_comparison.csv"
     line_path = reports_dir / "optimizer_v2_line_comparison.csv"
+    makespan_path = reports_dir / "optimizer_v2_makespan_comparison.csv"
     report_path = reports_dir / "optimizer_v2_report.md"
 
     weekly.to_csv(weekly_path, index=False)
     lines.to_csv(line_path, index=False)
+    makespan.to_csv(makespan_path, index=False)
     report_path.write_text(
         _render_markdown_report(
             weekly,
             lines,
+            makespan,
             config=config,
             generated_at=datetime.now().isoformat(timespec="seconds"),
             elapsed_seconds=perf_counter() - started_at,
         ),
         encoding="utf-8",
     )
-    return report_path, weekly_path, line_path
+    return report_path, weekly_path, line_path, makespan_path
 
 
 def validate_optimizer_result(
@@ -346,12 +363,138 @@ def _optimizer_line_totals(result: OptimizerV2Result, line_id: int) -> dict[str,
     }
 
 
+def _requested_makespan_comparison_row(
+    *,
+    window_id: str,
+    graph: nx.MultiDiGraph,
+    result: OptimizerV2Result,
+    real_by_line: dict[int, dict[str, float]],
+    validation: ValidationResult,
+    elapsed_seconds: float,
+) -> dict[str, object]:
+    """Build the exact comparison requested for optimizer-v2 evaluation.
+
+    The node-cost model was trained on ``productive_hours`` / speed derived from
+    ``productive_hours``. Therefore the historical simulator layer adds back the
+    per-line production inefficiency removed by that target:
+
+        production_inefficiency = sum(production_wo.total_hours - production_wo.productive_hours)
+
+    Cleaning WOs are kept separate, because they were excluded from node-cost
+    training and from the demand graph.
+    """
+
+    real_line_makespans: dict[int, float] = {}
+    real_simulated_line_makespans: dict[int, float] = {}
+    real_simulated_plus_cleaning_line_makespans: dict[int, float] = {}
+    real_simulated_plus_cleaning_maintenance_line_makespans: dict[int, float] = {}
+    v2_plus_cleaning_inefficiency_line_makespans: dict[int, float] = {}
+    v2_plus_cleaning_maintenance_inefficiency_line_makespans: dict[int, float] = {}
+
+    for line in LINE_IDS:
+        real = real_by_line[line]
+        route = result.routes[line]
+
+        edge_cost = real["changeover_hours"]
+        real_makespan_line = real["production_wall_hours"] + edge_cost
+        real_simulated_line = (
+            real["predicted_node_hours"]
+            + real["production_inefficiency_hours"]
+            + edge_cost
+        )
+        real_simulated_plus_cleaning_line = real_simulated_line + real["cleaning_wo_hours"]
+        real_simulated_plus_cleaning_maintenance_line = (
+            real_simulated_plus_cleaning_line + real["maintenance_rerun_hours"]
+        )
+        v2_plus_cleaning_inefficiency_line = (
+            route.total_hours
+            + real["production_inefficiency_hours"]
+            + real["cleaning_wo_hours"]
+        )
+        v2_plus_cleaning_maintenance_inefficiency_line = (
+            v2_plus_cleaning_inefficiency_line + real["maintenance_rerun_hours"]
+        )
+
+        real_line_makespans[line] = real_makespan_line
+        real_simulated_line_makespans[line] = real_simulated_line
+        real_simulated_plus_cleaning_line_makespans[line] = (
+            real_simulated_plus_cleaning_line
+        )
+        real_simulated_plus_cleaning_maintenance_line_makespans[line] = (
+            real_simulated_plus_cleaning_maintenance_line
+        )
+        v2_plus_cleaning_inefficiency_line_makespans[line] = (
+            v2_plus_cleaning_inefficiency_line
+        )
+        v2_plus_cleaning_maintenance_inefficiency_line_makespans[line] = (
+            v2_plus_cleaning_maintenance_inefficiency_line
+        )
+
+    row: dict[str, object] = {
+        "window_id": window_id,
+        "valid_solution": validation.is_valid,
+        "node_count": graph.number_of_nodes(),
+        "v2_makespan_hours": result.makespan_hours,
+        "real_makespan_wo_total_plus_edge_hours": max(real_line_makespans.values()),
+        "real_simulated_makespan_node_plus_inefficiency_plus_edge_hours": max(
+            real_simulated_line_makespans.values()
+        ),
+        "real_cleaning_hours": sum(
+            real_by_line[line]["cleaning_wo_hours"] for line in LINE_IDS
+        ),
+        "real_maintenance_rerun_hours": sum(
+            real_by_line[line]["maintenance_rerun_hours"] for line in LINE_IDS
+        ),
+        "real_simulated_makespan_plus_cleaning_hours": max(
+            real_simulated_plus_cleaning_line_makespans.values()
+        ),
+        "real_simulated_makespan_plus_cleaning_maintenance_hours": max(
+            real_simulated_plus_cleaning_maintenance_line_makespans.values()
+        ),
+        "v2_makespan_plus_cleaning_plus_real_inefficiencies_hours": max(
+            v2_plus_cleaning_inefficiency_line_makespans.values()
+        ),
+        "v2_makespan_plus_cleaning_maintenance_plus_real_inefficiencies_hours": max(
+            v2_plus_cleaning_maintenance_inefficiency_line_makespans.values()
+        ),
+        "real_production_inefficiency_hours": sum(
+            real_by_line[line]["production_inefficiency_hours"] for line in LINE_IDS
+        ),
+        "real_edge_cost_hours": sum(
+            real_by_line[line]["changeover_hours"] for line in LINE_IDS
+        ),
+        "real_predicted_node_hours": sum(
+            real_by_line[line]["predicted_node_hours"] for line in LINE_IDS
+        ),
+        "elapsed_seconds": elapsed_seconds,
+    }
+
+    for line in LINE_IDS:
+        row[f"real_makespan_l{line}_hours"] = real_line_makespans[line]
+        row[f"real_simulated_l{line}_hours"] = real_simulated_line_makespans[line]
+        row[f"real_cleaning_l{line}_hours"] = real_by_line[line]["cleaning_wo_hours"]
+        row[f"real_maintenance_rerun_l{line}_hours"] = real_by_line[line][
+            "maintenance_rerun_hours"
+        ]
+        row[f"v2_plus_cleaning_ineff_l{line}_hours"] = (
+            v2_plus_cleaning_inefficiency_line_makespans[line]
+        )
+        row[f"v2_plus_cleaning_maintenance_ineff_l{line}_hours"] = (
+            v2_plus_cleaning_maintenance_inefficiency_line_makespans[line]
+        )
+
+    return row
+
+
 def _historical_line_totals(
     graph: nx.DiGraph,
     window_wo: pd.DataFrame,
     line_id: int,
 ) -> dict[str, float]:
     productive = sum(float(attrs.get("actual_hours", 0.0)) for _, attrs in graph.nodes(data=True))
+    predicted_node = sum(
+        float(attrs.get("predicted_hours", 0.0)) for _, attrs in graph.nodes(data=True)
+    )
     changeover = sum(float(attrs.get("hours", 0.0)) for _, _, attrs in graph.edges(data=True))
     line_wo = window_wo[window_wo["line_id"] == line_id]
     production_wo = line_wo[line_wo["wo_kind"] == "production"]
@@ -371,6 +514,7 @@ def _historical_line_totals(
     return {
         "node_count": float(graph.number_of_nodes()),
         "productive_hours": productive,
+        "predicted_node_hours": predicted_node,
         "changeover_hours": changeover,
         "total_hours": productive + changeover,
         "production_wall_hours": production_wall,
@@ -391,6 +535,7 @@ def _historical_line_totals(
 def _render_markdown_report(
     weekly: pd.DataFrame,
     lines: pd.DataFrame,
+    makespan: pd.DataFrame,
     *,
     config: ReportConfig,
     generated_at: str,
@@ -463,6 +608,34 @@ def _render_markdown_report(
         f"- Mean production inefficiency hours per week: {weekly['real_production_inefficiency_hours'].mean():.2f} h",
         f"- Mean cleaning WO hours per week: {weekly['real_cleaning_wo_hours'].mean():.2f} h",
         f"- Mean maintenance/rerun WO hours per week: {weekly['real_maintenance_rerun_hours'].mean():.2f} h",
+        "",
+        "## Requested Makespan Comparison",
+        "",
+        "Node-cost ML predicts productive running time. The simulated real metric below adds back `production_wo.total_hours - production_wo.productive_hours`, then adds route edge cost. Cleaning WOs are shown separately and added per line before taking the makespan.",
+        "",
+        f"- Mean v2 makespan: {makespan['v2_makespan_hours'].mean():.2f} h",
+        f"- Mean real makespan (`WO total + edge`): {makespan['real_makespan_wo_total_plus_edge_hours'].mean():.2f} h",
+        f"- Mean real simulated makespan (`node + inefficiency + edge`): {makespan['real_simulated_makespan_node_plus_inefficiency_plus_edge_hours'].mean():.2f} h",
+        f"- Mean real cleaning hours: {makespan['real_cleaning_hours'].mean():.2f} h",
+        f"- Mean real simulated makespan + cleaning: {makespan['real_simulated_makespan_plus_cleaning_hours'].mean():.2f} h",
+        f"- Mean v2 makespan + cleaning + real inefficiencies: {makespan['v2_makespan_plus_cleaning_plus_real_inefficiencies_hours'].mean():.2f} h",
+        f"- Mean maintenance/rerun hours, extra column: {makespan['real_maintenance_rerun_hours'].mean():.2f} h",
+        f"- Mean real simulated makespan + cleaning + maintenance/rerun: {makespan['real_simulated_makespan_plus_cleaning_maintenance_hours'].mean():.2f} h",
+        f"- Mean v2 makespan + cleaning + maintenance/rerun + real inefficiencies: {makespan['v2_makespan_plus_cleaning_maintenance_plus_real_inefficiencies_hours'].mean():.2f} h",
+        "",
+        _to_markdown(
+            makespan[[
+                "window_id",
+                "v2_makespan_hours",
+                "real_makespan_wo_total_plus_edge_hours",
+                "real_simulated_makespan_node_plus_inefficiency_plus_edge_hours",
+                "real_cleaning_hours",
+                "real_simulated_makespan_plus_cleaning_hours",
+                "v2_makespan_plus_cleaning_plus_real_inefficiencies_hours",
+                "real_maintenance_rerun_hours",
+            ]].head(10),
+            floatfmt=".2f",
+        ),
         "",
         "## Production-line totals",
         "",
@@ -548,13 +721,14 @@ def main() -> None:
         enable_balance_repair=not args.no_balance_repair,
         balance_delta_hours=args.balance_delta_hours,
     )
-    report_path, weekly_path, line_path = generate_report(
+    report_path, weekly_path, line_path, makespan_path = generate_report(
         windows=args.windows,
         config=config,
     )
     print(f"Markdown report: {report_path}")
     print(f"Weekly CSV: {weekly_path}")
     print(f"Line CSV: {line_path}")
+    print(f"Makespan CSV: {makespan_path}")
 
 
 if __name__ == "__main__":

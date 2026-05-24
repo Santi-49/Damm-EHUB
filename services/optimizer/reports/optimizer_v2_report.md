@@ -1,6 +1,6 @@
 # Optimizer v2 weekly benchmark
 
-Generated at: `2026-05-24T09:11:20`
+Generated at: `2026-05-24T09:25:16`
 
 ## Configuration
 
@@ -10,7 +10,7 @@ Generated at: `2026-05-24T09:11:20`
 - `max_swap_candidates`: 20
 - `enable_balance_repair`: True
 - `balance_delta_hours`: 8.0
-- Runtime: 168.8 s
+- Runtime: 240.7 s
 
 ## Coverage validation
 
@@ -43,6 +43,32 @@ A solution is valid only when every planning-graph node is visited exactly once,
 - Mean production inefficiency hours per week: 124.29 h
 - Mean cleaning WO hours per week: 13.77 h
 - Mean maintenance/rerun WO hours per week: 50.29 h
+
+## Requested Makespan Comparison
+
+Node-cost ML predicts productive running time. The simulated real metric below adds back `production_wo.total_hours - production_wo.productive_hours`, then adds route edge cost. Cleaning WOs are shown separately and added per line before taking the makespan.
+
+- Mean v2 makespan: 85.03 h
+- Mean real makespan (`WO total + edge`): 158.89 h
+- Mean real simulated makespan (`node + inefficiency + edge`): 158.54 h
+- Mean real cleaning hours: 13.77 h
+- Mean real simulated makespan + cleaning: 163.69 h
+- Mean v2 makespan + cleaning + real inefficiencies: 140.54 h
+- Mean maintenance/rerun hours, extra column: 50.29 h
+- Mean real simulated makespan + cleaning + maintenance/rerun: 177.22 h
+- Mean v2 makespan + cleaning + maintenance/rerun + real inefficiencies: 163.07 h
+
+  window_id  v2_makespan_hours  real_makespan_wo_total_plus_edge_hours  real_simulated_makespan_node_plus_inefficiency_plus_edge_hours  real_cleaning_hours  real_simulated_makespan_plus_cleaning_hours  v2_makespan_plus_cleaning_plus_real_inefficiencies_hours  real_maintenance_rerun_hours
+2025-W01-7d          21.492449                               41.655000                                                       40.672264            13.801111                                    47.502264                                                 57.117449                     24.009167
+2025-W02-7d          57.246411                              101.643611                                                      102.501794            15.056111                                   107.465405                                                110.888952                     10.993056
+2025-W03-7d          64.535586                              117.750278                                                      117.753105            14.586111                                   125.581160                                                120.264753                     13.283889
+2025-W04-7d          77.842147                              130.271668                                                      130.312477             9.210556                                   133.821366                                                123.657702                     39.006944
+2025-W05-7d          74.060684                              124.814167                                                      135.810660             3.330000                                   135.810660                                                117.597340                     33.036667
+2025-W06-7d          90.356586                              144.019722                                                      143.020170            14.098056                                   145.879336                                                139.636830                     51.302778
+2025-W07-7d          64.456048                              132.114723                                                      134.639892            10.738333                                   138.964337                                                101.707714                    160.907778
+2025-W08-7d         105.559606                              147.446111                                                      161.551632            20.634722                                   169.171076                                                163.320983                     15.104722
+2025-W09-7d          50.408683                              104.041944                                                      105.889498            13.011111                                   110.754498                                                 92.095905                    199.132778
+2025-W10-7d         112.723979                              135.122778                                                      143.675050            13.834167                                   148.029772                                                166.263693                     37.541389
 
 ## Production-line totals
 
