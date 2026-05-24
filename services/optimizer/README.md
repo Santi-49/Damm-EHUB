@@ -91,6 +91,71 @@ breakdown or urgent demand. It respects `freeze_days`: the first N days of
 - [ ] Switching `WindowConfig.days` from 7 to 14 keeps `optimize` working
       without code changes.
 
+## Graph construction — `graph_builder.py`
+
+`services/optimizer/app/graph_builder.py` is the **graph orchestration layer**
+that sits between the raw CSVs and the OR-Tools solver.  It exposes four
+public functions:
+
+### `build_planning_graph(window_id, ...)` → `dict[int, nx.DiGraph]`
+
+Builds the complete SKU-level planning graph the optimiser routes through.
+Returns one `DiGraph` per line (keys 14, 17, 19) — **weights are
+line-specific**:
+
+| Graph element | Weight | Source |
+|---|---|---|
+| Node (`sku_id`) | `predicted_hours` = `units_demanded / predicted_speed` on this line | `node_cost_ml` CatBoost model |
+| Edge (`sku_from → sku_to`) | `hours` = theoretical changeover time on this line | `changeover_costs.csv` (Tabla CF Prat) |
+
+Only SKUs that have demand in `window_id` **and** `can_produce = True` on the
+line appear as nodes.  Self-loops are excluded.
+
+```python
+from services.optimizer.app.graph_builder import build_planning_graph, visualize_planning_graph
+
+graphs = build_planning_graph("2025-W01-7d")
+# graphs[14].nodes["ED13LP12"]["predicted_hours"]  → float
+# graphs[14]["ED13LP12"]["ED13LTW"]["hours"]        → float
+
+fig = visualize_planning_graph(graphs)
+fig.savefig("planning_graph.png", dpi=120, bbox_inches="tight")
+```
+
+### `build_historical_wo_graph(window_id, line_id, ...)` → `nx.DiGraph`
+
+Encodes the **actual production path taken** on a line in a historical week,
+for post-mortem comparison against the optimiser's proposal.
+
+- Filters `wo_master.csv` to `wo_kind == "production"` WOs whose `end_day`
+  falls in the window.
+- Collapses consecutive same-SKU WOs into a single *run* node (matches the
+  node-cost model's training granularity).
+- Adds ML-predicted node costs (`node_cost_ml`) alongside the actual
+  `productive_hours` for direct comparison.
+- Fills edges from `wo_changeovers.csv` — costs are **theoretical** (from
+  Tabla CF Prat), not observed durations (no timestamps exist in the raw exports).
+
+```python
+from services.optimizer.app.graph_builder import build_historical_wo_graph, visualize_wo_graph
+
+G = build_historical_wo_graph("2025-W01-7d", line_id=14)
+# G.nodes["ED13LP12_r0"]["predicted_hours"]  → float
+# G.nodes["ED13LP12_r0"]["actual_hours"]     → float
+
+fig = visualize_wo_graph(G)
+fig.savefig("wo_path_graph.png", dpi=120, bbox_inches="tight")
+```
+
+### `visualize_planning_graph(graphs)` and `visualize_wo_graph(graph)`
+
+Return `matplotlib.figure.Figure` objects — call `.savefig()` or `plt.show()`
+on them.  The planning graph uses a circular layout with node size ∝ hours and
+edge colour ∝ changeover cost.  The WO path uses a left-to-right timeline
+where node colour encodes `predicted / actual` ratio.
+
+---
+
 ## Skeleton
 
 ```
@@ -99,7 +164,7 @@ services/optimizer/
 ├── app/
 │   ├── __init__.py
 │   ├── implementation.py    ← TODO: GraphOptimizer(GraphOptimizerContract)
-│   ├── graph.py             ← node/edge construction, chunking, calendar expansion
+│   ├── graph_builder.py     ← graph construction + visualisation (done)
 │   ├── vrp_model.py         ← OR-Tools RoutingModel wrapper
 │   └── replan.py            ← freeze-window logic
 └── tests/
