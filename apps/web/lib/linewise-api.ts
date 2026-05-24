@@ -36,11 +36,11 @@ export interface WeekOption {
   range: string
   source: 'demo' | 'historical'
   reason: string
-  productionRows?: number
-  skuCount?: number
+  production_rows?: number
+  sku_count?: number
   units?: number
-  avgOee?: number
-  downtimeH?: number
+  avg_oee?: number
+  downtime_h?: number
 }
 
 export interface CompareBundle {
@@ -77,11 +77,11 @@ export const MOCK_WEEK_OPTIONS: WeekOption[] = [
     range: '21–27 Jul 2025',
     source: 'historical',
     reason: '50 production WOs across 46 SKUs. Good stress test for sequencing complexity.',
-    productionRows: 50,
-    skuCount: 46,
+    production_rows: 50,
+    sku_count: 46,
     units: 15855686,
-    avgOee: 0.521,
-    downtimeH: 207.4,
+    avg_oee: 0.521,
+    downtime_h: 207.4,
   },
   {
     id: '2025-W25',
@@ -89,11 +89,11 @@ export const MOCK_WEEK_OPTIONS: WeekOption[] = [
     range: '16–22 Jun 2025',
     source: 'historical',
     reason: '48 production WOs and 18.6M units. Good week to test capacity recovery.',
-    productionRows: 48,
-    skuCount: 44,
+    production_rows: 48,
+    sku_count: 44,
     units: 18607194,
-    avgOee: 0.574,
-    downtimeH: 185.2,
+    avg_oee: 0.574,
+    downtime_h: 185.2,
   },
   {
     id: '2025-W14',
@@ -101,11 +101,11 @@ export const MOCK_WEEK_OPTIONS: WeekOption[] = [
     range: '31 Mar–6 Apr 2025',
     source: 'historical',
     reason: '48 production WOs and many changeover flags. Good week for explaining transition waste.',
-    productionRows: 48,
-    skuCount: 46,
+    production_rows: 48,
+    sku_count: 46,
     units: 13022100,
-    avgOee: 0.463,
-    downtimeH: 180.9,
+    avg_oee: 0.463,
+    downtime_h: 180.9,
   },
 ]
 

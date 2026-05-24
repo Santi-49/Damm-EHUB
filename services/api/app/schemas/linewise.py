@@ -166,3 +166,4 @@ class PlanOptimizeResponse(BaseModel):
     h_saved: float
     coverage_pct: float
     dropped_skus: list[str]
+    sequence: Sequence
