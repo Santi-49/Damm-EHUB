@@ -1,6 +1,6 @@
 # `services/optimizer/` — Graph optimiser (Architecture D)
 
-> Owner: Person 2 · Contract: [`GraphOptimizerContract`](../../packages/contracts/module/optimizer.py) · Status: skeleton
+> Owner: Person 2 · Contract: [`GraphOptimizerContract`](../../packages/contracts/module/optimizer.py) · Status: v1 graph partitioner wired into pipeline
 
 This is the heart of LineWise. It implements the graph-search algorithm
 described in [`docs/linewise/implementacion.md`](../../docs/linewise/implementacion.md) §3.D.
@@ -76,8 +76,10 @@ breakdown or urgent demand. It respects `freeze_days`: the first N days of
 
 ## Stack
 
-- **OR-Tools** (`ortools.constraint_solver.pywrapcp`) — proven VRP with
-  disjunctions, time windows, makespan via `SetSpanCostCoefficientForVehicle`.
+- **v1 graph partitioner** (`services/optimizer/graph/line_partitioner.py`) —
+  constraint-aware partition search plus exact Held-Karp sequencing per line.
+  This is currently wired through `services/optimizer/app/implementation.py`
+  and consumed by the API orchestrator.
 
 ## Definition of done
 
@@ -230,7 +232,7 @@ services/optimizer/
 ├── README.md
 ├── app/
 │   ├── __init__.py
-│   ├── implementation.py    ← TODO: GraphOptimizer(GraphOptimizerContract)
+│   ├── implementation.py    ← production entrypoint wrapping v1 partitioner
 │   ├── graph_builder.py     ← graph construction + visualisation (done)
 │   ├── vrp_model.py         ← OR-Tools RoutingModel wrapper
 │   └── replan.py            ← freeze-window logic

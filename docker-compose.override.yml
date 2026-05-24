@@ -12,7 +12,8 @@ services:
     build:
       target: development
     volumes:
-      - ./services/api:/app
+      - .:/app
+    working_dir: /app/services/api
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       DEBUG: "true"

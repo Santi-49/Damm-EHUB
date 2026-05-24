@@ -14,14 +14,14 @@ const showMockupTuner = false;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="A dark landing page template for optimization software with a tilted app dashboard and demo CTA."
+      content="Quick2Plan is an AI production planning system that finds optimal canning sequences with graph optimization, CatBoost, K-means, simulation, and chatbot explanations."
     />
-    <title>{content.productName} | Optimization Landing Template</title>
+    <title>{content.productName} | AI Production Planning</title>
   </head>
   <body>
     <header class="site-header" aria-label="Site header">
       <a class="brand" href="#top" aria-label={`${content.productName} home`}>
-        <span class="brand__icon" aria-hidden="true">⌁</span>
+        <span class="brand__icon" aria-hidden="true">Q2</span>
         {content.productName}
       </a>
       <nav class="nav" aria-label="Primary navigation">
@@ -30,8 +30,8 @@ const showMockupTuner = false;
         ))}
       </nav>
       <div class="nav-actions">
-        <a class="login" href={content.appUrl}>Log in</a>
-        <a class="book" href={content.appUrl}>Try the app</a>
+        <a class="login" href={content.appUrl}>Sign in</a>
+        <a class="book" href={content.appUrl}>Launch demo</a>
       </div>
     </header>
 
@@ -39,23 +39,32 @@ const showMockupTuner = false;
       <div class="hero-stage">
         <section class="hero" aria-labelledby="hero-title">
           <div class="hero-copy">
+            <p class="hero-eyebrow">AI production sequencing for high-changeover canning lines</p>
             <h1 id="hero-title">{content.headline}</h1>
             <p>{content.subheadline}</p>
             <div class="hero-actions">
               <a class="button button--primary" href={content.appUrl}>{content.primaryCta}</a>
               <a class="button button--secondary" href="#why">{content.secondaryCta}</a>
             </div>
+            <div class="hero-stats" aria-label="Quick2Plan proof points">
+              {content.heroStats.map((stat) => (
+                <div>
+                  <strong>{stat.value}</strong>
+                  <span>{stat.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
-        <section class="mockup-section" aria-label="Tilted app dashboard preview">
+        <section class="mockup-section" aria-label="Tilted Quick2Plan dashboard preview">
           <div class="hero-mockup hero-mockup--exported" hidden={!useExportedMockup}>
-            <img class="mockup-export" src="/exports/tilted-app-mockup.png" alt="Optima app dashboard preview" />
+            <img class="mockup-export" src="/exports/tilted-app-mockup.png" alt="Quick2Plan app dashboard preview" />
           </div>
 
           <div class="hero-mockup hero-mockup--live" hidden={useExportedMockup}>
             <div class="mockup-plane">
-              <img src="/app.png" alt="Optima app dashboard preview" />
+              <img src="/app.png" alt="Quick2Plan app dashboard preview" />
             </div>
           </div>
 
@@ -85,18 +94,18 @@ const showMockupTuner = false;
       </div>
 
       <section class="why section-reveal" id="why" aria-labelledby="why-title">
-        <p class="pill">Why choose us</p>
+        <p class="pill">Why Quick2Plan</p>
         <h2 id="why-title">{content.whyTitle}</h2>
         <p class="section-copy">{content.whySubtitle}</p>
         <div class="why-grid">
           {content.cards.map((card) => (
             <article class="why-card">
-              <span class="card-icon" aria-hidden="true">⌁</span>
+              <span class="card-icon" aria-hidden="true">Q2</span>
               <h3>{card.title}</h3>
               <p>{card.text}</p>
               <div class="card-meter">
-                <span>Performance</span>
-                <strong>100%</strong>
+                <span>{card.metricLabel}</span>
+                <strong>{card.metric}</strong>
                 <i></i>
               </div>
             </article>
@@ -110,47 +119,48 @@ const showMockupTuner = false;
         <div class="bento">
           <article class="panel panel--large">
             <div class="panel-heading">
-              <span aria-hidden="true">▧</span>
-              <h3>{content.featurePanels[0]}</h3>
+              <span aria-hidden="true">AI</span>
+              <h3>{content.featurePanels[0].title}</h3>
             </div>
+            <p class="panel-copy">{content.featurePanels[0].text}</p>
             <div class="metrics-panel">
               <div class="mini-site">
                 <div class="dashboard dashboard--compact">
                   <div class="dash-main">
                     <div class="dash-top">
-                      <h3>Overview</h3>
-                      <div class="search">Search scenarios...</div>
+                      <h3>Sequence engine</h3>
+                      <div class="search">L14 / L17 / L19</div>
                     </div>
-                    <h4>Recent Optimizations</h4>
+                    <h4>Optimizer proof</h4>
                     <div class="stat-grid">
-                      <div><span>Total Runs</span><strong>6</strong></div>
-                      <div><span>Successful Plans</span><strong>3</strong></div>
-                      <div><span>Failed Plans</span><strong>1</strong></div>
-                      <div><span>Avg Solve Time</span><strong>5m 32s</strong></div>
+                      <div><span>Windows won</span><strong>53</strong></div>
+                      <div><span>Clean saving</span><strong>73.5h</strong></div>
+                      <div><span>Stress saving</span><strong>23.2h</strong></div>
+                      <div><span>Coverage guard</span><strong>100%</strong></div>
                     </div>
                     <div class="table">
-                      <span>Name</span><span>Status</span><span>Updated</span><span>Version</span>
-                      <b>capacity-review</b><i>Process</i><em>26/01/2026</em><small>v1.2.3</small>
-                      <b>demand-shift</b><i>Ready</i><em>06/05/2026</em><small>v1.2.0</small>
+                      <span>Layer</span><span>Role</span><span>Output</span><span>Speed</span>
+                      <b>Graph</b><i>Route</i><em>Sequence</em><small>Fast</small>
+                      <b>Simulator</b><i>Replay</i><em>OEE</em><small>Fair</small>
                     </div>
                   </div>
                 </div>
               </div>
               <div class="score-panel">
                 <div class="tabs">
-                  <span>Performance</span>
-                  <span>Accessibility</span>
-                  <span>Best Practices</span>
-                  <span>SEO</span>
+                  <span>Graph</span>
+                  <span>CatBoost</span>
+                  <span>K-means</span>
+                  <span>Chat</span>
                 </div>
                 <div class="score-row">
-                  <b>100</b><b>100</b><b>100</b><b>100</b>
+                  <b>VRP</b><b>ML</b><b>SKU</b><b>QA</b>
                 </div>
                 <ul class="audit-list">
-                  <li><span>First Contentful Paint</span><strong>0.8s</strong></li>
-                  <li><span>Largest Contentful Paint</span><strong>1.2s</strong></li>
-                  <li><span>Total Blocking Time</span><strong>0ms</strong></li>
-                  <li><span>Decision Index</span><strong>Fast</strong></li>
+                  <li><span>Line-format constraints</span><strong>Hard</strong></li>
+                  <li><span>Changeover edges</span><strong>Weighted</strong></li>
+                  <li><span>Incident replay</span><strong>Same</strong></li>
+                  <li><span>Planner explanation</span><strong>Grounded</strong></li>
                 </ul>
               </div>
             </div>
@@ -158,70 +168,75 @@ const showMockupTuner = false;
 
           <article class="panel panel--deploy">
             <div class="panel-heading">
-              <span aria-hidden="true">▧</span>
-              <h3>{content.featurePanels[1]}</h3>
+              <span aria-hidden="true">RT</span>
+              <h3>{content.featurePanels[1].title}</h3>
             </div>
+            <p class="panel-copy">{content.featurePanels[1].text}</p>
             <div class="terminal">
               <span></span><span></span><span></span>
-              <pre>&gt; optimize run demo</pre>
+              <pre>&gt; quick2plan replan --week 2026-W21
+graph: edges scored
+catboost: node costs ready
+solver: path found in 3.8s</pre>
             </div>
             <div class="pipeline">
-              <b>✓</b><b>✓</b><b>3</b><b>4</b>
+              <b>1</b><b>2</b><b>3</b><b>4</b>
             </div>
           </article>
 
           <article class="panel">
             <div class="panel-heading">
-              <span aria-hidden="true">▧</span>
-              <h3>{content.featurePanels[2]}</h3>
+              <span aria-hidden="true">CB</span>
+              <h3>{content.featurePanels[2].title}</h3>
             </div>
+            <p class="panel-copy">{content.featurePanels[2].text}</p>
             <div class="tree">
-              <p>src</p>
-              <p>├ components</p>
-              <p>├ scenarios</p>
-              <p>├ constraints</p>
-              <p>└ demo.tsx</p>
+              <p>node_cost_ml/</p>
+              <p>|-- train.py</p>
+              <p>|-- model.cbm</p>
+              <p>|-- inference.py</p>
+              <p>|-- speed_to_hours</p>
             </div>
           </article>
 
           <article class="panel">
             <div class="panel-heading">
-              <span aria-hidden="true">▧</span>
-              <h3>{content.featurePanels[3]}</h3>
+              <span aria-hidden="true">KM</span>
+              <h3>{content.featurePanels[3].title}</h3>
             </div>
-            <div class="usage-chart">
-              <span style="--h: 28%"></span>
-              <span style="--h: 45%"></span>
-              <span style="--h: 66%"></span>
-              <span style="--h: 53%"></span>
+            <p class="panel-copy">{content.featurePanels[3].text}</p>
+            <div class="usage-chart" aria-label="K-means SKU family distribution preview">
               <span style="--h: 38%"></span>
+              <span style="--h: 62%"></span>
+              <span style="--h: 84%"></span>
+              <span style="--h: 54%"></span>
+              <span style="--h: 70%"></span>
             </div>
           </article>
 
           <article class="panel panel--wide">
             <div class="panel-heading">
-              <span aria-hidden="true">▧</span>
-              <h3>{content.featurePanels[4]}</h3>
+              <span aria-hidden="true">OE</span>
+              <h3>{content.featurePanels[4].title}</h3>
             </div>
+            <p class="panel-copy">{content.featurePanels[4].text}</p>
             <div class="globe">
               <span></span>
               <span></span>
               <span></span>
-              <div class="globe-stat globe-stat--one">1094<br /><small>runs</small></div>
-              <div class="globe-stat globe-stat--two">99.8%<br /><small>uptime</small></div>
+              <div class="globe-stat globe-stat--one">same<br /><small>incidents</small></div>
+              <div class="globe-stat globe-stat--two">fair<br /><small>OEE</small></div>
             </div>
           </article>
         </div>
       </section>
 
       <section class="templates section-reveal" id="demo" aria-labelledby="templates-title">
-        <h2 id="templates-title">Built to become your final demo shell.</h2>
-        <p>
-          Keep the visual system. Replace the product name, dashboard labels, and app link when the hackathon direction is clear.
-        </p>
+        <p class="pill">Live story</p>
+        <h2 id="templates-title">{content.demoTitle}</h2>
+        <p>{content.demoSubtitle}</p>
         <a class="button button--primary" href={content.appUrl}>Open app frontend</a>
       </section>
-
     </main>
 
     <script>

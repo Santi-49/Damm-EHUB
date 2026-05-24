@@ -17,6 +17,11 @@ dependencies = [
     "langchain>=0.3",
     "langchain-core>=0.3",
     "langchain-anthropic>=0.3",
+    "networkx>=3.6.1",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "catboost>=1.2",
+    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]

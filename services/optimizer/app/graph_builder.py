@@ -619,6 +619,234 @@ def visualize_wo_graph(
 
 
 # ---------------------------------------------------------------------------
+# 5. K-means segmentation — 2D scatter of all SKUs for a planning window
+# ---------------------------------------------------------------------------
+
+_CLUSTER_COLORS = ["#4C9BE8", "#E87B4C", "#4CBF6E"]  # blue / orange / green
+
+_CAPABILITY_MARKERS: dict[str, str] = {
+    "L17":        "^",   # triangle-up   — L17-only (most constrained)
+    "L14":        "P",   # plus-filled
+    "L19":        "*",   # star
+    "L14/17":     "s",   # square
+    "L17/19":     "v",   # triangle-down
+    "L14/19":     "D",   # diamond
+    "L14/17/19":  "o",   # circle        — fully flexible
+}
+
+
+def visualize_kmeans_segmentation(
+    window_id: str,
+    *,
+    k: int = 3,
+    figsize: tuple[float, float] = (14, 9),
+    random_state: int = 42,
+    save_to: Path | str | None = None,
+) -> plt.Figure:
+    """2D K-means segmentation scatter for all SKUs in a planning window.
+
+    Features used: capability flags (can_L14/17/19), per-line predicted
+    production hours, and units_demanded.  Scaled with StandardScaler,
+    projected to 2D with PCA, clustered with K-means (k=3 by default).
+
+    Point colour  = K-means cluster
+    Marker shape  = line-capability profile
+    Marker size   = proportional to units_demanded
+
+    Parameters
+    ----------
+    window_id:
+        Planning-window id, e.g. ``"2025-W13-7d"``.
+    k:
+        Number of clusters. Default 3 mirrors the three production lines.
+    figsize:
+        Matplotlib figure size in inches.
+    random_state:
+        Seed for KMeans and PCA reproducibility.
+    save_to:
+        Optional path to save the figure (PNG/SVG/PDF). If ``None`` the
+        figure is returned but not saved.
+
+    Returns
+    -------
+    ``matplotlib.figure.Figure``
+    """
+    from sklearn.cluster import KMeans
+    from sklearn.decomposition import PCA
+    from sklearn.preprocessing import StandardScaler
+
+    G = build_planning_graph(window_id)
+
+    # Build feature DataFrame — one row per SKU
+    records = []
+    for sku in G.nodes:
+        attrs = G.nodes[sku]
+        ld = attrs.get("line_data", {})
+        records.append({
+            "sku_id": sku,
+            "units_demanded": float(attrs.get("units_demanded", 0)),
+            "can_L14": float(14 in ld),
+            "can_L17": float(17 in ld),
+            "can_L19": float(19 in ld),
+            "hours_L14": float(ld.get(14, {}).get("predicted_hours", 0.0)),
+            "hours_L17": float(ld.get(17, {}).get("predicted_hours", 0.0)),
+            "hours_L19": float(ld.get(19, {}).get("predicted_hours", 0.0)),
+        })
+
+    df = pd.DataFrame(records)
+    feature_cols = [
+        "units_demanded",
+        "can_L14", "can_L17", "can_L19",
+        "hours_L14", "hours_L17", "hours_L19",
+    ]
+    X = df[feature_cols].values
+
+    X_scaled = StandardScaler().fit_transform(X)
+
+    km = KMeans(n_clusters=k, random_state=random_state, n_init=10)
+    df["cluster"] = km.fit_predict(X_scaled)
+
+    pca = PCA(n_components=2, random_state=random_state)
+    coords = pca.fit_transform(X_scaled)
+    df["pc1"] = coords[:, 0]
+    df["pc2"] = coords[:, 1]
+
+    def _cap_label(row: pd.Series) -> str:
+        parts = (
+            (["L14"] if row["can_L14"] else [])
+            + (["L17"] if row["can_L17"] else [])
+            + (["L19"] if row["can_L19"] else [])
+        )
+        return "/".join(parts) if parts else "none"
+
+    df["capability"] = df.apply(_cap_label, axis=1)
+
+    max_units = df["units_demanded"].max() or 1.0
+    min_size = 80  # guarantee every point is visible regardless of demand
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Convex hull regions per cluster (drawn first so points sit on top)
+    try:
+        from scipy.spatial import ConvexHull
+        for cid in range(k):
+            pts = df.loc[df["cluster"] == cid, ["pc1", "pc2"]].values
+            if len(pts) < 3:
+                continue
+            hull = ConvexHull(pts)
+            closed = np.append(pts[hull.vertices], pts[hull.vertices[:1]], axis=0)
+            color = _CLUSTER_COLORS[cid % len(_CLUSTER_COLORS)]
+            ax.fill(closed[:, 0], closed[:, 1], alpha=0.08, color=color, zorder=1)
+            ax.plot(closed[:, 0], closed[:, 1], color=color,
+                    linewidth=1.2, alpha=0.5, zorder=2)
+    except Exception:
+        pass  # scipy not available or degenerate hull — skip silently
+
+    # Scatter — group by capability (marker) × cluster (color)
+    for cap, marker in _CAPABILITY_MARKERS.items():
+        cap_df = df[df["capability"] == cap]
+        if cap_df.empty:
+            continue
+        for cid in range(k):
+            sub = cap_df[cap_df["cluster"] == cid]
+            if sub.empty:
+                continue
+            sizes = min_size + (sub["units_demanded"] / max_units) * 240
+            ax.scatter(
+                sub["pc1"], sub["pc2"],
+                c=_CLUSTER_COLORS[cid % len(_CLUSTER_COLORS)],
+                marker=marker,
+                s=sizes,
+                alpha=0.90,
+                edgecolors="white",
+                linewidths=0.6,
+                zorder=3,
+            )
+
+    # Centroids at the visual mean of each cluster's 2D projected points
+    for cid in range(k):
+        cx = df.loc[df["cluster"] == cid, "pc1"].mean()
+        cy = df.loc[df["cluster"] == cid, "pc2"].mean()
+        ax.scatter(
+            cx, cy,
+            c=_CLUSTER_COLORS[cid % len(_CLUSTER_COLORS)],
+            marker="X",
+            s=260,
+            edgecolors="black",
+            linewidths=1.5,
+            zorder=5,
+        )
+
+    # SKU labels
+    for _, row in df.iterrows():
+        ax.annotate(
+            str(row["sku_id"])[:12],
+            (row["pc1"], row["pc2"]),
+            fontsize=5,
+            ha="center",
+            va="bottom",
+            xytext=(0, 5),
+            textcoords="offset points",
+            color="#333333",
+        )
+
+    # Legend: clusters
+    cluster_handles = [
+        plt.Line2D(
+            [0], [0], marker="o", color="w",
+            markerfacecolor=_CLUSTER_COLORS[i],
+            markersize=10, label=f"Cluster {i + 1}",
+        )
+        for i in range(k)
+    ]
+    cluster_handles.append(
+        plt.Line2D(
+            [0], [0], marker="X", color="w",
+            markerfacecolor="gray", markeredgecolor="black",
+            markersize=10, label="Centroid",
+        )
+    )
+    # Legend: capability profiles present in this window
+    cap_handles = []
+    for cap, marker in _CAPABILITY_MARKERS.items():
+        if df["capability"].eq(cap).any():
+            cap_handles.append(
+                plt.Line2D(
+                    [0], [0], marker=marker, color="w",
+                    markerfacecolor="#777777",
+                    markersize=8, label=cap,
+                )
+            )
+
+    leg1 = ax.legend(
+        handles=cluster_handles,
+        title="K-means cluster", title_fontsize=9,
+        loc="upper left", fontsize=8,
+    )
+    ax.add_artist(leg1)
+    ax.legend(
+        handles=cap_handles,
+        title="Line capability", title_fontsize=9,
+        loc="upper right", fontsize=8,
+    )
+
+    var1, var2 = pca.explained_variance_ratio_
+    ax.set_xlabel(f"PC1  ({var1:.1%} variance explained)", fontsize=10)
+    ax.set_ylabel(f"PC2  ({var2:.1%} variance explained)", fontsize=10)
+    ax.set_title(
+        f"K-means segmentation (k={k})  —  {window_id}   ({len(df)} SKUs)",
+        fontsize=13, fontweight="bold",
+    )
+    ax.grid(True, linestyle="--", alpha=0.35)
+    fig.tight_layout()
+
+    if save_to is not None:
+        fig.savefig(save_to, dpi=150, bbox_inches="tight")
+
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # Quick smoke test (run with: python -m services.optimizer.app.graph_builder)
 # ---------------------------------------------------------------------------
 

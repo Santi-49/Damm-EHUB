@@ -1,7 +1,7 @@
 """Orchestrator for LineWise: graph building + optimization + serialisation.
 
-Bridges the backend API to the optimizer service (implementacion_v2 / graph_builder).
-Translates NetworkX graph objects and OptimizerV2Result into the Pydantic response
+Bridges the backend API to the optimizer service and graph_builder.
+Translates NetworkX graph objects and OptimizerResult into the Pydantic response
 types defined in app.schemas.linewise.
 """
 
@@ -26,8 +26,8 @@ from services.optimizer.app.graph_builder import (
     build_historical_wo_graph,
     build_planning_graph,
 )
-from services.optimizer.app.implementacion_v2 import (
-    OptimizerV2Result,
+from services.optimizer.app.implementation import (
+    OptimizerResult,
     optimize_graph,
 )
 
@@ -196,9 +196,7 @@ class LinewiseOrchestrator:
         planning_graph = build_planning_graph(
             week_id, demand_df=demand, capability_df=capability
         )
-        opt_result = optimize_graph(
-            planning_graph, max_iterations=5, max_exact_nodes=15
-        )
+        opt_result = optimize_graph(planning_graph)
         opt_seq = _opt_result_to_sequence(
             opt_result, planning_graph, week_id, w_start, w_end, solution_id
         )
@@ -268,7 +266,7 @@ class LinewiseOrchestrator:
                 dropped_skus=[p.sku_id for p in request.products],
             )
 
-        result = optimize_graph(graph, max_iterations=5, max_exact_nodes=15)
+        result = optimize_graph(graph)
 
         # SKU metadata
         sku_family: dict[str, str] = {}
@@ -462,7 +460,7 @@ def _wo_graphs_to_sequence(
 
 
 def _opt_result_to_sequence(
-    result: OptimizerV2Result,
+    result: OptimizerResult,
     graph: nx.MultiDiGraph,
     week_id: str,
     w_start: pd.Timestamp,
@@ -630,7 +628,7 @@ def _real_simulation_report(
 
 def _opt_simulation_report(
     seq_id: str,
-    result: OptimizerV2Result,
+    result: OptimizerResult,
     graph: nx.MultiDiGraph,
     demand: pd.DataFrame,
     week_id: str,

@@ -1,4 +1,4 @@
-name: myapp
+name: quick2plan
 
 services:
 
@@ -46,7 +46,8 @@ services:
 
   api:
     build:
-      context: ./services/api
+      context: .
+      dockerfile: services/api/Dockerfile
       target: production
     restart: unless-stopped
     depends_on:
