@@ -33,6 +33,8 @@ class WeekOption(BaseModel):
     id: str
     label: str
     range: str
+    week_start: Optional[str] = None
+    week_end: Optional[str] = None
     source: Literal["demo", "historical"]
     reason: str
     production_rows: Optional[int] = None
@@ -174,6 +176,7 @@ class PlanOptimizeResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ReplanRequest(BaseModel):
+    week_id: Optional[str] = None
     scenario_id: str = "breakdown"
     breakdown_line: Optional[LineId] = None
     breakdown_day: Optional[str] = None  # ISO date "YYYY-MM-DD"

@@ -1,14 +1,28 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { replanScenarios, type ReplanScenario } from '@/lib/fixtures/replan-scenarios'
 import { GanttChart } from './gantt-chart'
 import { RecommendationCard } from './recommendation-card'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Zap, WifiOff, ChevronRight, RotateCcw, Loader2 } from 'lucide-react'
-import { runReplan, type DataSource } from '@/lib/linewise-api'
+import {
+  listWeeks,
+  MOCK_WEEK_OPTIONS,
+  runReplan,
+  type ApiResult,
+  type DataSource,
+  type WeekOption,
+} from '@/lib/linewise-api'
 
 const SCENARIO_ICONS = {
   'urgent-demand': Zap,
@@ -23,37 +37,66 @@ const SKU_OPTIONS = [
   { sku: 'TU13LTN',  label: 'Turia 1/3 lata',            format: '1/3', compatibleLines: [14, 17, 19], l19Speed: 74005 },
 ]
 
-const DAY_OPTIONS = [
-  { value: '2024-12-30', label: 'Mon 30 Dec' },
-  { value: '2024-12-31', label: 'Tue 31 Dec' },
-  { value: '2025-01-01', label: 'Wed 1 Jan' },
-  { value: '2025-01-02', label: 'Thu 2 Jan' },
-  { value: '2025-01-03', label: 'Fri 3 Jan' },
-]
-
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
   value: hour,
   label: `${String(hour).padStart(2, '0')}:00`,
 }))
 
 export function WhatIfForm() {
+  const initialDayOptions = buildWeekDayOptions(MOCK_WEEK_OPTIONS[0])
+  const [weeksResult, setWeeksResult] = useState<ApiResult<WeekOption[]>>({
+    data: MOCK_WEEK_OPTIONS,
+    source: 'mock',
+  })
+  const [selectedWeekId, setSelectedWeekId] = useState(MOCK_WEEK_OPTIONS[0].id)
   const [scenarioId, setScenarioId] = useState<ScenarioId>('urgent-demand')
-  const [introductionDay, setIntroductionDay] = useState('2024-12-31')
+  const [introductionDay, setIntroductionDay] = useState(defaultDayValue(initialDayOptions, 1))
   const [introductionHour, setIntroductionHour] = useState(8)
-  const [requiredDay, setRequiredDay] = useState('2025-01-03')
+  const [requiredDay, setRequiredDay] = useState(defaultDayValue(initialDayOptions, 4))
   const [requiredHour, setRequiredHour] = useState(18)
   const [urgentSku,  setUrgentSku]  = useState('ED13LP12')
   const [urgentUnits, setUrgentUnits] = useState(8000)
   const [breakdownLine, setBreakdownLine] = useState<14 | 17 | 19>(14)
-  const [breakdownDay,  setBreakdownDay]  = useState('2024-12-31')
+  const [breakdownDay,  setBreakdownDay]  = useState(defaultDayValue(initialDayOptions, 1))
   const [breakdownH,    setBreakdownH]    = useState(8)
   const [loading, setLoading]             = useState(false)
   const [result, setResult]               = useState<ReplanScenario | null>(null)
   const [resultSource, setResultSource]   = useState<DataSource | null>(null)
 
+  const weeks = weeksResult.data
+  const selectedWeek = weeks.find(w => w.id === selectedWeekId) ?? MOCK_WEEK_OPTIONS[0]
+  const dropdownWeeks = weeks.some(w => w.id === selectedWeek.id) ? weeks : [selectedWeek, ...weeks]
+  const dayOptions = buildWeekDayOptions(selectedWeek)
   const selectedSku = SKU_OPTIONS.find(s => s.sku === urgentSku)!
   const introducedAt = `${introductionDay}T${String(introductionHour).padStart(2, '0')}:00:00`
   const requiredBy = `${requiredDay}T${String(requiredHour).padStart(2, '0')}:00:00`
+
+  useEffect(() => {
+    let active = true
+    listWeeks().then(result => {
+      if (!active) return
+      setWeeksResult(result)
+      setSelectedWeekId(current => (
+        result.data.some(week => week.id === current)
+          ? current
+          : result.data[0]?.id ?? current
+      ))
+    })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    const options = buildWeekDayOptions(selectedWeek)
+    setIntroductionDay(current => (
+      options.some(day => day.value === current) ? current : defaultDayValue(options, 1)
+    ))
+    setRequiredDay(current => (
+      options.some(day => day.value === current) ? current : defaultDayValue(options, 4)
+    ))
+    setBreakdownDay(current => (
+      options.some(day => day.value === current) ? current : defaultDayValue(options, 1)
+    ))
+  }, [selectedWeek])
 
   async function handleReplan() {
     setLoading(true)
@@ -61,6 +104,7 @@ export function WhatIfForm() {
     setResultSource(null)
 
     const response = await runReplan({
+      week_id: selectedWeek.id,
       scenario_id: scenarioId,
       introduced_at: introducedAt,
       required_by: scenarioId === 'urgent-demand' ? requiredBy : undefined,
@@ -74,6 +118,12 @@ export function WhatIfForm() {
     setResult(response.data)
     setResultSource(response.source)
     setLoading(false)
+  }
+
+  function handleWeekChange(weekId: string) {
+    setSelectedWeekId(weekId)
+    setResult(null)
+    setResultSource(null)
   }
 
   return (
@@ -108,36 +158,67 @@ export function WhatIfForm() {
       <Card>
         <CardContent className="pt-5 pb-5">
           <div className="space-y-4">
-            <p className="text-sm font-medium">When does the new information arrive?</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Weekday</label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  value={introductionDay}
-                  onChange={e => setIntroductionDay(e.target.value)}
-                >
-                  {DAY_OPTIONS.map(d => (
-                    <option key={d.value} value={d.value}>{d.label}</option>
+            <div>
+              <label htmlFor="whatif-week" className="block text-sm font-medium">
+                Planning week
+              </label>
+              <Select value={selectedWeek.id} onValueChange={handleWeekChange}>
+                <SelectTrigger id="whatif-week" className="mt-2 w-full">
+                  <SelectValue placeholder="Select a week" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dropdownWeeks.map(week => (
+                    <SelectItem key={week.id} value={week.id}>
+                      {week.label}
+                    </SelectItem>
                   ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Hour</label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  value={introductionHour}
-                  onChange={e => setIntroductionHour(Number(e.target.value))}
-                >
-                  {HOUR_OPTIONS.map(h => (
-                    <option key={h.value} value={h.value}>{h.label}</option>
-                  ))}
-                </select>
+                </SelectContent>
+              </Select>
+              <div className="mt-3 rounded-lg bg-muted/40 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {selectedWeek.range}
+                  </p>
+                  <Badge variant={weeksResult.source === 'backend' ? 'default' : 'outline'}>
+                    {weeksResult.source === 'backend' ? 'Backend weeks' : 'Mock weeks'}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed">{selectedWeek.reason}</p>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              The planner receives this what-if at {introducedAt.replace('T', ' ')} and only replans from that point onward.
-            </p>
+
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium">When does the new information arrive?</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Weekday</label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={introductionDay}
+                    onChange={e => setIntroductionDay(e.target.value)}
+                  >
+                    {dayOptions.map(d => (
+                      <option key={d.value} value={d.value}>{d.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Hour</label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={introductionHour}
+                    onChange={e => setIntroductionHour(Number(e.target.value))}
+                  >
+                    {HOUR_OPTIONS.map(h => (
+                      <option key={h.value} value={h.value}>{h.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The planner receives this what-if at {introducedAt.replace('T', ' ')} and only replans from that point onward.
+              </p>
+            </div>
           </div>
 
           {scenarioId === 'urgent-demand' && (
@@ -186,7 +267,7 @@ export function WhatIfForm() {
                     value={requiredDay}
                     onChange={e => setRequiredDay(e.target.value)}
                   >
-                    {DAY_OPTIONS.map(d => (
+                    {dayOptions.map(d => (
                       <option key={d.value} value={d.value}>{d.label}</option>
                     ))}
                   </select>
@@ -230,7 +311,7 @@ export function WhatIfForm() {
                     value={breakdownDay}
                     onChange={e => setBreakdownDay(e.target.value)}
                   >
-                    {DAY_OPTIONS.map(d => (
+                    {dayOptions.map(d => (
                       <option key={d.value} value={d.value}>{d.label}</option>
                     ))}
                   </select>
@@ -279,7 +360,9 @@ export function WhatIfForm() {
                 {resultSource === 'backend' ? 'Backend result' : 'Mock fallback'}
               </Badge>
             )}
-            <span className="text-xs text-muted-foreground">Comparing against S_opt baseline</span>
+            <span className="text-xs text-muted-foreground">
+              Comparing against S_opt baseline for {result.base_sequence.week_id || selectedWeek.id}
+            </span>
           </div>
 
           <RecommendationCard scenario={result} />
@@ -292,4 +375,75 @@ export function WhatIfForm() {
       )}
     </div>
   )
+}
+
+type DayOption = {
+  value: string
+  label: string
+}
+
+const FALLBACK_WEEK_START = '2024-12-30'
+const FALLBACK_WEEK_END = '2025-01-05'
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+function buildWeekDayOptions(week: WeekOption): DayOption[] {
+  const bounds = resolveWeekBounds(week)
+  const start = parseDateOnly(bounds.start)
+  if (!start) return []
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = addDaysUtc(start, index)
+    return {
+      value: formatDateOnly(day),
+      label: `${WEEKDAY_LABELS[day.getUTCDay()]} ${day.getUTCDate()} ${MONTH_LABELS[day.getUTCMonth()]}`,
+    }
+  })
+}
+
+function defaultDayValue(options: DayOption[], preferredIndex: number) {
+  return options[Math.min(preferredIndex, Math.max(0, options.length - 1))]?.value ?? FALLBACK_WEEK_START
+}
+
+function resolveWeekBounds(week: WeekOption) {
+  if (week.week_start && week.week_end) {
+    return { start: week.week_start, end: week.week_end }
+  }
+  return parseIsoWeekId(week.id) ?? { start: FALLBACK_WEEK_START, end: FALLBACK_WEEK_END }
+}
+
+function parseIsoWeekId(weekId: string) {
+  const match = weekId.match(/^(\d{4})-W(\d{2})/)
+  if (!match) return null
+
+  const year = Number(match[1])
+  const week = Number(match[2])
+  if (!Number.isInteger(year) || !Number.isInteger(week) || week < 1 || week > 53) return null
+
+  const jan4 = new Date(Date.UTC(year, 0, 4))
+  const jan4IsoDay = jan4.getUTCDay() || 7
+  const monday = addDaysUtc(jan4, 1 - jan4IsoDay + (week - 1) * 7)
+
+  return {
+    start: formatDateOnly(monday),
+    end: formatDateOnly(addDaysUtc(monday, 6)),
+  }
+}
+
+function parseDateOnly(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return null
+
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function addDaysUtc(date: Date, days: number) {
+  const next = new Date(date)
+  next.setUTCDate(date.getUTCDate() + days)
+  return next
+}
+
+function formatDateOnly(date: Date) {
+  return date.toISOString().slice(0, 10)
 }

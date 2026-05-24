@@ -24,15 +24,15 @@ export function ImpactRankedList({ atlas, limit = 10 }: ImpactRankedListProps) {
   const router = useRouter()
   const ranked = [...atlas.weeks]
     .filter(w => w.has_production)
-    .sort((a, b) => b.margin_recovered - a.margin_recovered)
+    .sort((a, b) => b.clean_saving_h - a.clean_saving_h)
     .slice(0, limit)
 
   return (
     <Card className="overflow-hidden">
       <CardHeader className="border-b py-3">
-        <CardTitle className="text-base">Top {limit} weeks — biggest recovery opportunity</CardTitle>
+        <CardTitle className="text-base">Top {limit} windows — biggest clean savings</CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
-          Sorted by margin LineWise would have protected. Click any row to drill into the side-by-side comparison.
+          Sorted by raw v2 vs real simulated makespan. Click any row to drill into the side-by-side comparison.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -68,28 +68,34 @@ function RankedRow({ week, rank, onClick }: { week: WeekImpact; rank: number; on
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
-            real OEE {(week.real_oee * 100).toFixed(1)}%
+            {week.node_count} nodes
           </Badge>
-          <span className="text-[10px] text-emerald-700 font-medium">
-            +{week.oee_uplift_pp.toFixed(1)} pp uplift
+          <span className="text-[10px] text-muted-foreground font-medium">
+            v2 {week.v2_makespan_h.toFixed(1)} h · real {week.real_simulated_makespan_h.toFixed(1)} h
           </span>
         </div>
       </div>
 
       <div className="hidden sm:flex flex-col items-end shrink-0">
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Changeover</span>
-        <span className="tabular-nums text-sm font-semibold">{week.hours_recovered.toFixed(1)} h</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Adjusted</span>
+        <span
+          className={`tabular-nums text-sm font-semibold ${
+            week.adjusted_saving_h >= 0 ? 'text-emerald-700' : 'text-red-700'
+          }`}
+        >
+          {week.adjusted_saving_h.toFixed(1)} h
+        </span>
       </div>
 
       <div className="hidden md:flex flex-col items-end shrink-0">
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">SKUs</span>
-        <span className="tabular-nums text-sm font-semibold">{week.dropped_skus_recovered}</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Cleaning</span>
+        <span className="tabular-nums text-sm font-semibold">{week.real_cleaning_h.toFixed(1)} h</span>
       </div>
 
       <div className="flex flex-col items-end shrink-0 min-w-[88px]">
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Margin</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Clean</span>
         <span className="tabular-nums text-base font-bold text-emerald-700">
-          €{week.margin_recovered.toLocaleString()}
+          {week.clean_saving_h.toFixed(1)} h
         </span>
       </div>
 

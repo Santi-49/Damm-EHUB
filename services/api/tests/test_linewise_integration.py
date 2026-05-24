@@ -30,6 +30,8 @@ from app.schemas.linewise import (  # noqa: E402
     PlanOptimizeRequest,
     PlanOptimizeResponse,
     ProductDemand,
+    ReplanRequest,
+    ReplanScenario,
     WeekOption,
 )
 
@@ -261,7 +263,30 @@ class TestOptimize:
 
 
 # ---------------------------------------------------------------------------
-# 4. Edge cases
+# 4. replan what-if
+# ---------------------------------------------------------------------------
+
+class TestReplan:
+
+    def test_urgent_replan_uses_explicit_week_id(self, orc):
+        req = ReplanRequest(
+            week_id=FAST_WEEK_ID,
+            scenario_id="urgent-demand",
+            introduced_at="2024-12-31T08:00:00",
+            required_by="2025-01-03T18:00:00",
+            urgent_sku="ED13LP12",
+            urgent_units=1_000,
+        )
+        result, elapsed = _timed("replan(urgent, explicit week)", orc.replan, req)
+        print(f"\n  replan(urgent, explicit week): {elapsed:.3f}s")
+
+        assert isinstance(result, ReplanScenario)
+        assert result.base_sequence.week_id == FAST_WEEK_ID
+        assert result.sequence.week_id == FAST_WEEK_ID
+
+
+# ---------------------------------------------------------------------------
+# 5. Edge cases
 # ---------------------------------------------------------------------------
 
 class TestEdgeCases:

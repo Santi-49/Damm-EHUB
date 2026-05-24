@@ -33,18 +33,18 @@ export default function InsightsPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-2xl">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-3xl font-bold tracking-tight">2025 Impact Atlas</h1>
-            <Badge variant="secondary">Counterfactual replay</Badge>
+            <h1 className="text-3xl font-bold tracking-tight">Optimizer v2 Impact</h1>
+            <Badge variant="secondary">2025 replay benchmark</Badge>
           </div>
           <p className="text-muted-foreground mt-1">
-            Every production week of 2025 replayed through the LineWise optimiser — same demand window, same incidents, fair fight.
+            The 53-window benchmark replayed through LineWise v2 — clean routing savings, adjusted stress tests, and weekly drill-down.
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Backend endpoint: <code className="font-mono">GET /api/v1/linewise/impact-atlas?year=2025</code>. Falls back to a deterministic fixture until the engine ships.
+            Source: <code className="font-mono">{atlas.source_dataset}</code>. The web fixture is hardcoded from the latest report.
           </p>
         </div>
         <Badge variant={result.source === 'backend' ? 'default' : 'outline'}>
-          {loading ? 'Loading' : result.source === 'backend' ? 'Backend result' : 'Mock fallback'}
+          {loading ? 'Loading' : result.source === 'backend' ? 'Backend result' : 'Hardcoded benchmark'}
         </Badge>
       </div>
 

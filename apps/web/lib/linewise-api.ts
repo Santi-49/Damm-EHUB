@@ -34,6 +34,8 @@ export interface WeekOption {
   id: string
   label: string
   range: string
+  week_start?: string
+  week_end?: string
   source: 'demo' | 'historical'
   reason: string
   production_rows?: number
@@ -54,6 +56,7 @@ export interface CompareBundle {
 }
 
 export interface ReplanRequest {
+  week_id?: string
   scenario_id: string
   introduced_at?: string
   required_by?: string
@@ -69,6 +72,8 @@ export const MOCK_WEEK_OPTIONS: WeekOption[] = [
     id: '2026-W20-demo',
     label: '2026-W20 · demo week',
     range: '18–24 May 2026',
+    week_start: '2026-05-18',
+    week_end: '2026-05-24',
     source: 'demo',
     reason: 'Best showcase: Damm plan, real execution, and LineWise recommendation are already mocked end-to-end.',
   },
@@ -76,6 +81,8 @@ export const MOCK_WEEK_OPTIONS: WeekOption[] = [
     id: '2025-W30',
     label: '2025-W30 · high SKU variety',
     range: '21–27 Jul 2025',
+    week_start: '2025-07-21',
+    week_end: '2025-07-27',
     source: 'historical',
     reason: '50 production WOs across 46 SKUs. Good stress test for sequencing complexity.',
     production_rows: 50,
@@ -88,6 +95,8 @@ export const MOCK_WEEK_OPTIONS: WeekOption[] = [
     id: '2025-W25',
     label: '2025-W25 · heavy volume',
     range: '16–22 Jun 2025',
+    week_start: '2025-06-16',
+    week_end: '2025-06-22',
     source: 'historical',
     reason: '48 production WOs and 18.6M units. Good week to test capacity recovery.',
     production_rows: 48,
@@ -100,6 +109,8 @@ export const MOCK_WEEK_OPTIONS: WeekOption[] = [
     id: '2025-W14',
     label: '2025-W14 · many changeovers',
     range: '31 Mar–6 Apr 2025',
+    week_start: '2025-03-31',
+    week_end: '2025-04-06',
     source: 'historical',
     reason: '48 production WOs and many changeover flags. Good week for explaining transition waste.',
     production_rows: 48,
@@ -239,10 +250,12 @@ function buildWeekOptionFromAtlas(weekId: string): WeekOption | null {
   const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
   return {
     id: entry.week_id,
-    label: `${entry.week_id} · from Impact Atlas`,
+    label: `${entry.week_id} · from optimizer benchmark`,
     range: `${fmt(start)} – ${fmt(end)} ${start.getUTCFullYear()}`,
+    week_start: entry.week_start,
+    week_end: entry.week_end,
     source: 'historical',
-    reason: `Selected from the 2025 leaderboard — €${entry.margin_recovered.toLocaleString()} recoverable, ${entry.hours_recovered.toFixed(1)}h changeover saved.`,
+    reason: `Selected from the optimizer v2 benchmark — ${entry.clean_saving_h.toFixed(1)}h clean routing saved, ${entry.adjusted_saving_h.toFixed(1)}h under adjusted replay.`,
   }
 }
 

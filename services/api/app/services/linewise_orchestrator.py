@@ -159,6 +159,8 @@ class LinewiseOrchestrator:
                     id=wid,
                     label=f"{wid} · {_short_descriptor(sku_cnt, avg_oee)}",
                     range=_format_range(w_start, w_end),
+                    week_start=w_start.date().isoformat(),
+                    week_end=w_end.date().isoformat(),
                     source=str(row["api_source"]),  # type: ignore[arg-type]
                     reason=_make_reason(sku_cnt, production_rows, avg_oee),
                     production_rows=production_rows,
@@ -419,23 +421,33 @@ class LinewiseOrchestrator:
         demand = self._get_demand()
         capability = self._get_capability()
 
-        # Locate the planning window that contains the breakdown date
+        # Locate the selected planning window. week_id is preferred so the UI can
+        # run the same perturbation pattern across different demand windows.
         breakdown_date = pd.Timestamp(request.breakdown_day)
-        mask = (
-            pd.to_datetime(demand["window_start"]) <= breakdown_date
-        ) & (
-            pd.to_datetime(demand["window_end"]) >= breakdown_date
-        )
-        matching = demand[mask]
-        if matching.empty:
-            raise KeyError(
-                f"No planning window found for date {request.breakdown_day!r}"
+        if request.week_id:
+            matching = demand[demand["window_id"] == request.week_id]
+            if matching.empty:
+                raise KeyError(f"week_id {request.week_id!r} not found in demand.csv")
+        else:
+            mask = (
+                pd.to_datetime(demand["window_start"]) <= breakdown_date
+            ) & (
+                pd.to_datetime(demand["window_end"]) >= breakdown_date
             )
+            matching = demand[mask]
+            if matching.empty:
+                raise KeyError(
+                    f"No planning window found for date {request.breakdown_day!r}"
+                )
 
         row0 = matching.iloc[0]
         week_id = str(row0["window_id"])
         w_start = pd.Timestamp(row0["window_start"])
         w_end = pd.Timestamp(row0["window_end"])
+        if not (w_start <= breakdown_date <= w_end):
+            raise ValueError(
+                f"breakdown_day {request.breakdown_day!r} is outside week_id {week_id!r}"
+            )
         solution_id = str(uuid.uuid4())
 
         graph = build_planning_graph(week_id, demand_df=demand, capability_df=capability)
@@ -537,21 +549,30 @@ class LinewiseOrchestrator:
 
         introduced_ts = pd.Timestamp(request.introduced_at)
         introduced_day = pd.Timestamp(introduced_ts.date())
-        mask = (
-            pd.to_datetime(demand["window_start"]) <= introduced_day
-        ) & (
-            pd.to_datetime(demand["window_end"]) >= introduced_day
-        )
-        matching = demand[mask]
-        if matching.empty:
-            raise KeyError(
-                f"No planning window found for introduced_at={request.introduced_at!r}"
+        if request.week_id:
+            matching = demand[demand["window_id"] == request.week_id]
+            if matching.empty:
+                raise KeyError(f"week_id {request.week_id!r} not found in demand.csv")
+        else:
+            mask = (
+                pd.to_datetime(demand["window_start"]) <= introduced_day
+            ) & (
+                pd.to_datetime(demand["window_end"]) >= introduced_day
             )
+            matching = demand[mask]
+            if matching.empty:
+                raise KeyError(
+                    f"No planning window found for introduced_at={request.introduced_at!r}"
+                )
 
         row0 = matching.iloc[0]
         week_id = str(row0["window_id"])
         w_start = pd.Timestamp(row0["window_start"])
         w_end = pd.Timestamp(row0["window_end"])
+        if not (w_start <= introduced_day <= w_end):
+            raise ValueError(
+                f"introduced_at {request.introduced_at!r} is outside week_id {week_id!r}"
+            )
         solution_id = str(uuid.uuid4())
 
         graph = build_planning_graph(week_id, demand_df=demand, capability_df=capability)
@@ -1548,6 +1569,8 @@ def _week_option_for(
         id=week_id,
         label=f"{week_id} · {_short_descriptor(sku_count, avg_oee)}",
         range=_format_range(w_start, w_end),
+        week_start=w_start.date().isoformat(),
+        week_end=w_end.date().isoformat(),
         source=source_val,  # type: ignore[arg-type]
         reason=_make_reason(sku_count, production_rows, avg_oee),
         production_rows=production_rows,

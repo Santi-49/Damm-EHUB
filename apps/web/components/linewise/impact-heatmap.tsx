@@ -53,7 +53,7 @@ export function ImpactHeatmap({ atlas }: ImpactHeatmapProps) {
       <CardHeader className="border-b py-3">
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
-            <CardTitle className="text-base">2025 calendar — recovery potential per week</CardTitle>
+            <CardTitle className="text-base">2025 operating windows — clean savings</CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
               Deeper green = more clean routing hours saved. Click any week to open the side-by-side comparison.
             </p>

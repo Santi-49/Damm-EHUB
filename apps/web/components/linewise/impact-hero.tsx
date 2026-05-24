@@ -59,8 +59,9 @@ export function ImpactHero({ atlas }: ImpactHeroProps) {
             </h2>
             <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
               The benchmark now uses the optimizer v2 report directly: {atlas.windows_evaluated} weekly windows,
-              {` ${atlas.valid_solutions}`} valid solutions, and a pessimistic adjusted result of{' '}
-              {atlas.adjusted_saving_h_per_week.toFixed(1)} h/week.
+              {' '}{atlas.valid_solutions} valid solutions, a pessimistic adjusted result of{' '}
+              {atlas.adjusted_saving_h_per_week.toFixed(1)} h/week, and a mixed observed check of{' '}
+              {atlas.mixed_observed_saving_h_per_week.toFixed(1)} h/week.
             </p>
           </div>
         </div>
