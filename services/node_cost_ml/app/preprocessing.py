@@ -41,7 +41,6 @@ def load_raw() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 def filter_production(wo: pd.DataFrame) -> pd.DataFrame:
     """Apply the gates documented in `docs/data/node_cost_train.md`."""
     out = wo[wo["wo_kind"] == "production"].copy()
-    out = out[out["productive_hours"] >= 0.5]
     out = out[(out["oee"].isna()) | (out["oee"] <= 1.2)]
     return out
 
@@ -84,8 +83,8 @@ def build_modelling_frame() -> pd.DataFrame:
     prod = filter_production(wo)
     runs = aggregate_consecutive_same_sku(prod)
     runs = join_features(runs, skus, cap)
-    runs = runs[runs["productive_hours"] >= 0.5].copy()
     runs = runs[runs["units_produced"] > 0].copy()
+    runs = runs[runs["productive_hours"] > 0].copy()  # guard: speed = units/hours would be undefined
     runs["sqrt_units"] = np.sqrt(runs["units_produced"])
     runs["log_units"] = np.log1p(runs["units_produced"])
     return runs.reset_index(drop=True)

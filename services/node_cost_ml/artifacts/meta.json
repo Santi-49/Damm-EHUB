@@ -46,7 +46,7 @@
     9
   ],
   "global_speed_uds_per_hour": 74068.96136994651,
-  "n_train": 1766,
+  "n_train": 1798,
   "n_iterations": 300,
   "target": "effective_speed_uds_per_hour",
   "inference_recovery": "predicted_hours = units_produced / predicted_speed",
