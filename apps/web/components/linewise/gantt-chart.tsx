@@ -9,6 +9,7 @@ const LINES: Line[] = [14, 17, 19]
 const WEEK_HOURS = 7 * 24
 const DAY_HOURS = 24
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const URGENT_MIN_WIDTH_PCT = 0.9
 
 // Color map per slot kind / SKU family — all with white text
 const isUrgentSlot = (slot: Slot): boolean =>
@@ -68,6 +69,42 @@ function formatTooltip(slot: Slot): { title: string; lines: string[] } {
   return { title: slot.label ?? slot.kind, lines: [`Duration: ${duration}`] }
 }
 
+function buildRenderedSlots(
+  slots: Slot[],
+  weekStart: string,
+  visibleStart: number,
+  visibleEnd: number,
+  visibleHours: number,
+) {
+  let visualOffsetPct = 0
+
+  return slots.flatMap(slot => {
+    const slotStart = parseHour(slot.start, weekStart)
+    const slotEnd = parseHour(slot.end, weekStart)
+    const clippedStart = Math.max(slotStart, visibleStart)
+    const clippedEnd = Math.min(slotEnd, visibleEnd)
+    if (clippedEnd <= visibleStart || clippedStart >= visibleEnd) return []
+
+    const isUrgent = isUrgentSlot(slot)
+    const naturalLeftPct = ((clippedStart - visibleStart) / visibleHours) * 100
+    const naturalWidthPct = ((clippedEnd - clippedStart) / visibleHours) * 100
+    const widthPct = isUrgent
+      ? Math.max(naturalWidthPct, URGENT_MIN_WIDTH_PCT)
+      : naturalWidthPct
+    const leftPct = naturalLeftPct + visualOffsetPct
+
+    visualOffsetPct += widthPct - naturalWidthPct
+
+    return [{
+      slot,
+      isUrgent,
+      leftPct,
+      widthPct,
+      isNarrow: widthPct < 3.5,
+    }]
+  })
+}
+
 const HOUR_LABELS = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00']
 const HOUR_GRID_LINES = [4, 8, 12, 16, 20]
 
@@ -94,7 +131,10 @@ interface GanttChartProps {
 export function GanttChart({ sequence, title, viewport = 'week' }: GanttChartProps) {
   const [selected, setSelected] = useState<Slot | null>(null)
 
-  const slotsForLine = (line: Line) => sequence.slots.filter(s => s.line === line)
+  const slotsForLine = (line: Line) =>
+    sequence.slots
+      .filter(s => s.line === line)
+      .sort((a, b) => dateLikeToTime(a.start) - dateLikeToTime(b.start))
   const selectedDayIndex = viewport === 'week' ? null : Number(viewport.replace('day-', ''))
   const visibleStart = selectedDayIndex == null ? 0 : selectedDayIndex * DAY_HOURS
   const visibleHours = selectedDayIndex == null ? WEEK_HOURS : DAY_HOURS
@@ -149,19 +189,13 @@ export function GanttChart({ sequence, title, viewport = 'week' }: GanttChartPro
                 />
               ))}
 
-              {slotsForLine(line).map(slot => {
-                const slotStart = parseHour(slot.start, sequence.week_start)
-                const slotEnd = parseHour(slot.end, sequence.week_start)
-                const clippedStart = Math.max(slotStart, visibleStart)
-                const clippedEnd = Math.min(slotEnd, visibleEnd)
-                if (clippedEnd <= visibleStart || clippedStart >= visibleEnd) return null
-
-                const left = clippedStart - visibleStart
-                const width = clippedEnd - clippedStart
-                const leftPct  = (left  / visibleHours) * 100
-                const widthPct = (width / visibleHours) * 100
-                const isNarrow = widthPct < 3.5
-                const isUrgent = isUrgentSlot(slot)
+              {buildRenderedSlots(
+                slotsForLine(line),
+                sequence.week_start,
+                visibleStart,
+                visibleEnd,
+                visibleHours,
+              ).map(({ slot, isUrgent, leftPct, widthPct, isNarrow }) => {
                 const styleClasses = getSlotStyle(slot)
                 const { title: tipTitle, lines: tipLines } = formatTooltip(slot)
 
@@ -178,9 +212,7 @@ export function GanttChart({ sequence, title, viewport = 'week' }: GanttChartPro
                         ].join(' ')}
                         style={{
                           left:  `calc(${leftPct}% + 1px)`,
-                          width: isUrgent
-                            ? `max(8px, calc(${widthPct}% - 2px))`
-                            : `calc(${widthPct}% - 2px)`,
+                          width: `calc(${widthPct}% - 2px)`,
                           zIndex: isUrgent ? 10 : undefined,
                         }}
                         onClick={() => setSelected(slot)}

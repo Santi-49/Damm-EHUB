@@ -167,9 +167,6 @@ function CompareHeader({
         <p className="text-muted-foreground mt-1">
           Pick a production week, then compare Damm&apos;s real execution against the LineWise sequence for the same demand window.
         </p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Backend endpoint: <code className="font-mono">GET /api/v1/linewise/compare</code>. Falls back to demo fixtures until the engine is ready.
-        </p>
       </div>
 
       <div className="w-full lg:w-96 rounded-xl border bg-card p-4">
