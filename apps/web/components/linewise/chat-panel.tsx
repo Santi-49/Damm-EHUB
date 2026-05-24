@@ -14,6 +14,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw, Send, Sparkles } from 'lucide-react'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type {
   ChatMessage,
   ChatRequest,
@@ -26,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { sendChatMessage, type DataSource } from '@/lib/linewise-api'
 import { useChatHistory } from '@/lib/hooks/use-chat-history'
+import { cn } from '@/lib/utils'
 
 interface ChatPanelProps {
   solutionId: string
@@ -147,13 +150,13 @@ export function ChatPanel({
             >
               <div
                 className={[
-                  'max-w-[80%] rounded-lg px-3 py-2 text-sm leading-relaxed',
+                  'min-w-0 max-w-[80%] overflow-hidden rounded-lg px-3 py-2 text-sm leading-relaxed',
                   m.role === 'user'
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-card border',
                 ].join(' ')}
               >
-                {m.content}
+                <MarkdownMessage content={m.content} isUser={m.role === 'user'} />
               </div>
             </div>
           ))}
@@ -191,6 +194,83 @@ export function ChatPanel({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function MarkdownMessage({ content, isUser }: { content: string; isUser: boolean }) {
+  const components: Components = {
+    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+    a: ({ children, href }) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className={cn(
+          'font-medium underline underline-offset-2',
+          isUser ? 'text-primary-foreground' : 'text-primary',
+        )}
+      >
+        {children}
+      </a>
+    ),
+    ul: ({ children }) => <ul className="mb-2 ml-4 list-disc space-y-1 marker:text-current last:mb-0">{children}</ul>,
+    ol: ({ children }) => <ol className="mb-2 ml-4 list-decimal space-y-1 marker:text-current last:mb-0">{children}</ol>,
+    li: ({ children }) => <li className="pl-1">{children}</li>,
+    h1: ({ children }) => <h1 className="mb-2 text-sm font-semibold last:mb-0">{children}</h1>,
+    h2: ({ children }) => <h2 className="mb-2 text-sm font-semibold last:mb-0">{children}</h2>,
+    h3: ({ children }) => <h3 className="mb-2 text-sm font-semibold last:mb-0">{children}</h3>,
+    blockquote: ({ children }) => (
+      <blockquote
+        className={cn(
+          'mb-2 border-l-2 pl-3 italic last:mb-0',
+          isUser ? 'border-primary-foreground/40' : 'border-border text-muted-foreground',
+        )}
+      >
+        {children}
+      </blockquote>
+    ),
+    code: ({ children, className }) => (
+      <code
+        className={cn(
+          'rounded px-1 py-0.5 font-mono text-[0.85em]',
+          isUser ? 'bg-primary-foreground/15' : 'bg-muted text-foreground',
+          className,
+        )}
+      >
+        {children}
+      </code>
+    ),
+    pre: ({ children }) => (
+      <pre
+        className={cn(
+          'mb-2 max-w-full overflow-x-auto rounded-md p-2 text-xs last:mb-0',
+          isUser ? 'bg-primary-foreground/15' : 'bg-muted',
+        )}
+      >
+        {children}
+      </pre>
+    ),
+    table: ({ children }) => (
+      <div className="mb-2 max-w-full overflow-x-auto last:mb-0">
+        <table className="w-full border-collapse text-xs">{children}</table>
+      </div>
+    ),
+    th: ({ children }) => (
+      <th className={cn('border px-2 py-1 text-left font-semibold', isUser && 'border-primary-foreground/30')}>
+        {children}
+      </th>
+    ),
+    td: ({ children }) => (
+      <td className={cn('border px-2 py-1 align-top', isUser && 'border-primary-foreground/30')}>
+        {children}
+      </td>
+    ),
+  }
+
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {content}
+    </ReactMarkdown>
   )
 }
 

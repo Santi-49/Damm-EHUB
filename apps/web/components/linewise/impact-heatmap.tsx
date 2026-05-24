@@ -13,18 +13,17 @@ const QUARTERS: Array<{ label: string; weeks: [number, number] }> = [
   { label: 'Q1', weeks: [1, 13] },
   { label: 'Q2', weeks: [14, 26] },
   { label: 'Q3', weeks: [27, 39] },
-  { label: 'Q4', weeks: [40, 52] },
+  { label: 'Q4', weeks: [40, 53] },
 ]
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-// Map € recovered to a 0-4 intensity bin. Thresholds picked from the mock data
-// so most weeks land in 1-2 and the worst weeks pop in 4.
-function intensity(margin: number): 0 | 1 | 2 | 3 | 4 {
-  if (margin <= 0) return 0
-  if (margin < 12_000) return 1
-  if (margin < 25_000) return 2
-  if (margin < 45_000) return 3
+// Map clean hours saved to a 0-4 intensity bin.
+function intensity(hours: number): 0 | 1 | 2 | 3 | 4 {
+  if (hours <= 0) return 0
+  if (hours < 40) return 1
+  if (hours < 75) return 2
+  if (hours < 110) return 3
   return 4
 }
 
@@ -56,7 +55,7 @@ export function ImpactHeatmap({ atlas }: ImpactHeatmapProps) {
           <div>
             <CardTitle className="text-base">2025 calendar — recovery potential per week</CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Deeper green = more margin LineWise would have recovered. Click any week to open the side-by-side comparison.
+              Deeper green = more clean routing hours saved. Click any week to open the side-by-side comparison.
             </p>
           </div>
           <Legend />
@@ -77,7 +76,7 @@ export function ImpactHeatmap({ atlas }: ImpactHeatmapProps) {
                   </div>
                   <div className="flex gap-1.5 flex-1">
                     {quarterWeeks.map(week => {
-                      const bin = intensity(week.margin_recovered)
+                      const bin = intensity(week.clean_saving_h)
                       const cls = BIN_CLASSES[bin]
                       const disabled = !week.has_production
                       return (
@@ -114,7 +113,7 @@ function WeekTooltip({ week }: { week: WeekImpact }) {
     return (
       <div className="space-y-0.5">
         <p className="font-mono font-semibold">{week.week_id}</p>
-        <p className="text-muted-foreground">No production · cleaning / vacation</p>
+        <p className="text-muted-foreground">No production window</p>
       </div>
     )
   }
@@ -127,20 +126,26 @@ function WeekTooltip({ week }: { week: WeekImpact }) {
         </span>
       </div>
       <div className="flex items-center justify-between gap-3 pt-1 border-t border-border/40">
-        <span className="text-muted-foreground">Margin recoverable</span>
-        <span className="tabular-nums font-bold text-emerald-700">€{week.margin_recovered.toLocaleString()}</span>
+        <span className="text-muted-foreground">Clean saving</span>
+        <span className="tabular-nums font-bold text-emerald-700">{week.clean_saving_h.toFixed(1)} h</span>
       </div>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-muted-foreground">Hours saved</span>
-        <span className="tabular-nums font-semibold">{week.hours_recovered.toFixed(1)} h</span>
+        <span className="text-muted-foreground">Adjusted saving</span>
+        <span className="tabular-nums font-semibold">{week.adjusted_saving_h.toFixed(1)} h</span>
       </div>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-muted-foreground">SKUs recovered</span>
-        <span className="tabular-nums font-semibold">{week.dropped_skus_recovered}</span>
+        <span className="text-muted-foreground">v2 vs real</span>
+        <span className="tabular-nums font-semibold">
+          {week.v2_makespan_h.toFixed(1)} / {week.real_simulated_makespan_h.toFixed(1)} h
+        </span>
       </div>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-muted-foreground">OEE uplift</span>
-        <span className="tabular-nums font-semibold">+{week.oee_uplift_pp.toFixed(1)} pp</span>
+        <span className="text-muted-foreground">Cleaning load</span>
+        <span className="tabular-nums font-semibold">{week.real_cleaning_h.toFixed(1)} h</span>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-muted-foreground">Maint. / rerun</span>
+        <span className="tabular-nums font-semibold">{week.real_maintenance_rerun_h.toFixed(1)} h</span>
       </div>
       <p className="text-[10px] text-muted-foreground pt-1 italic">Click to open Compare view</p>
     </div>

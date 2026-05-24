@@ -1,5 +1,5 @@
 import { Card } from '@/components/ui/card'
-import { CalendarRange, Clock, Euro, ShieldCheck, TrendingUp } from 'lucide-react'
+import { CalendarRange, Clock, Gauge, ShieldCheck, TrendingUp } from 'lucide-react'
 import type { ImpactAtlas } from '@/lib/types/insights'
 
 interface ImpactHeroProps {
@@ -9,32 +9,39 @@ interface ImpactHeroProps {
 export function ImpactHero({ atlas }: ImpactHeroProps) {
   const tiles = [
     {
-      icon: Euro,
-      heading: `€${(atlas.total_margin_recovered / 1_000_000).toFixed(2)}M`,
-      label: 'margin Damm left on the table',
-      sub: `${atlas.total_dropped_skus_recovered} SKUs would not have been dropped`,
+      icon: Clock,
+      heading: `${atlas.clean_saving_h_per_week.toFixed(1)} h/wk`,
+      label: 'clean routing savings',
+      sub: `Raw v2 vs real simulated makespan`,
       tone: 'text-emerald-700 bg-emerald-50 border-emerald-200',
       isHeadline: true,
     },
     {
-      icon: Clock,
-      heading: `${atlas.total_hours_recovered.toFixed(0)} h`,
-      label: 'changeover waste recoverable',
-      sub: `Across ${atlas.weeks_with_production} production weeks`,
+      icon: TrendingUp,
+      heading: `${atlas.adjusted_saving_h_per_week.toFixed(1)} h/wk`,
+      label: 'adjusted stress-test savings',
+      sub: `${atlas.adjusted_weeks_won}/${atlas.windows_evaluated} windows still win`,
       tone: 'text-blue-700 bg-blue-50 border-blue-200',
     },
     {
-      icon: TrendingUp,
-      heading: `+${atlas.avg_oee_uplift_pp.toFixed(1)} pp`,
-      label: 'average OEE uplift per week',
-      sub: 'Same demand, same incidents — fairly compared',
+      icon: ShieldCheck,
+      heading: `${atlas.valid_solutions}/${atlas.windows_evaluated}`,
+      label: 'valid optimizer solutions',
+      sub: 'Every demand node visited once; no drops',
       tone: 'text-amber-700 bg-amber-50 border-amber-200',
     },
     {
+      icon: Gauge,
+      heading: `${atlas.mean_v2_makespan_h.toFixed(1)} h`,
+      label: 'mean v2 makespan',
+      sub: `Real simulated baseline ${atlas.mean_real_simulated_makespan_h.toFixed(1)} h`,
+      tone: 'text-red-700 bg-red-50 border-red-200',
+    },
+    {
       icon: CalendarRange,
-      heading: `${atlas.weeks_with_production}/52`,
-      label: 'weeks audited',
-      sub: `${52 - atlas.weeks_with_production} non-producing weeks excluded`,
+      heading: `${atlas.maintenance_adjusted_saving_h_per_week.toFixed(1)} h/wk`,
+      label: 'maintenance replay savings',
+      sub: `${atlas.maintenance_adjusted_weeks_won}/${atlas.windows_evaluated} windows still win`,
       tone: 'text-muted-foreground bg-muted/30 border-muted',
     },
   ]
@@ -48,16 +55,17 @@ export function ImpactHero({ atlas }: ImpactHeroProps) {
           </div>
           <div>
             <h2 className="text-xl font-bold tracking-tight">
-              €{(atlas.total_margin_recovered / 1_000_000).toFixed(2)}M of margin recoverable in {atlas.year}
+              {atlas.clean_saving_h_per_week.toFixed(1)} h/week clean routing savings in the {atlas.year} replay
             </h2>
             <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-              We replayed every production week of {atlas.year} through LineWise, holding incidents and calendar constant.
-              The numbers below are what the historical execution left on the table.
+              The benchmark now uses the optimizer v2 report directly: {atlas.windows_evaluated} weekly windows,
+              {` ${atlas.valid_solutions}`} valid solutions, and a pessimistic adjusted result of{' '}
+              {atlas.adjusted_saving_h_per_week.toFixed(1)} h/week.
             </p>
           </div>
         </div>
       </div>
-      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5">
         {tiles.map(tile => (
           <div key={tile.label} className={`rounded-xl border p-4 ${tile.tone}`}>
             <tile.icon className="mb-3 h-5 w-5" />

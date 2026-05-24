@@ -1,24 +1,38 @@
-// Domain types for the Insights view — the 2025 counterfactual leaderboard.
+// Domain types for the Insights view — the optimizer v2 replay benchmark.
 // Mirrors a future Pydantic schema in services/api/app/schemas/linewise.py.
 
 export interface WeekImpact {
-  week_id: string                  // e.g. "2025-W14"
-  week_start: string               // ISO date — Monday
-  week_end: string                 // ISO date — Sunday
-  hours_recovered: number          // changeover hours LineWise would save vs S_real
-  margin_recovered: number         // € from SKUs LineWise would not have dropped
-  dropped_skus_recovered: number   // count of SKUs LineWise would have kept
-  oee_uplift_pp: number            // OEE percentage points uplift
-  real_oee: number                 // historical OEE for context (0–1)
-  has_production: boolean          // false = vacation / cleaning-only week
+  week_id: string                         // e.g. "2025-W14-7d"
+  week_start: string                      // ISO date — Monday
+  week_end: string                        // ISO date — Sunday
+  node_count: number                      // planning graph demand nodes
+  v2_makespan_h: number                   // optimized makespan
+  real_simulated_makespan_h: number       // real simulated node + inefficiency + edge makespan
+  clean_saving_h: number                  // real_simulated_makespan_h - v2_makespan_h
+  adjusted_saving_h: number               // line-specific cleaning + inefficiency replay
+  maintenance_adjusted_saving_h: number   // adjusted_saving_h plus maintenance / rerun replay
+  mixed_observed_saving_h: number         // real WO total + edge vs adjusted v2
+  real_cleaning_h: number                 // historical cleaning WO load
+  real_maintenance_rerun_h: number        // historical maintenance / rerun load
+  has_production: boolean
 }
 
 export interface ImpactAtlas {
   year: number
-  weeks: WeekImpact[]              // always 52 entries, in week order
-  total_hours_recovered: number
-  total_margin_recovered: number
-  total_dropped_skus_recovered: number
-  weeks_with_production: number
-  avg_oee_uplift_pp: number
+  source_dataset: string
+  generated_at: string
+  weeks: WeekImpact[]
+  windows_evaluated: number
+  valid_solutions: number
+  mean_v2_makespan_h: number
+  mean_real_simulated_makespan_h: number
+  clean_saving_h_per_week: number
+  adjusted_saving_h_per_week: number
+  adjusted_weeks_won: number
+  maintenance_adjusted_saving_h_per_week: number
+  maintenance_adjusted_weeks_won: number
+  mixed_observed_saving_h_per_week: number
+  mixed_observed_weeks_won: number
+  mean_real_cleaning_h: number
+  mean_real_maintenance_rerun_h: number
 }
