@@ -97,30 +97,97 @@ breakdown or urgent demand. It respects `freeze_days`: the first N days of
 that sits between the raw CSVs and the OR-Tools solver.  It exposes four
 public functions:
 
-### `build_planning_graph(window_id, ...)` → `dict[int, nx.DiGraph]`
+### `build_planning_graph(window_id, ...)` → `nx.MultiDiGraph`
 
 Builds the complete SKU-level planning graph the optimiser routes through.
-Returns one `DiGraph` per line (keys 14, 17, 19) — **weights are
-line-specific**:
+Returns a **single** `nx.MultiDiGraph` covering all three lines — node costs
+and edge costs are both **line-specific**, encoded as follows:
 
-| Graph element | Weight | Source |
+| Graph element | Storage | Source |
 |---|---|---|
-| Node (`sku_id`) | `predicted_hours` = `units_demanded / predicted_speed` on this line | `node_cost_ml` CatBoost model |
-| Edge (`sku_from → sku_to`) | `hours` = theoretical changeover time on this line | `changeover_costs.csv` (Tabla CF Prat) |
+| Node (`sku_id`) | `G.nodes[sku]["line_data"][line_id]["predicted_hours"]` = `units_demanded / predicted_speed` on that line. Only lines where `can_produce = True` are present. | `node_cost_ml` CatBoost model |
+| Edge (`sku_from → sku_to`) keyed by `line_id` | `G[sku_from][sku_to][line_id]["hours"]` = theoretical changeover time on that line. One edge per `(sku_from, sku_to, line_id)` triple. | `changeover_costs.csv` (Tabla CF Prat) |
 
-Only SKUs that have demand in `window_id` **and** `can_produce = True` on the
-line appear as nodes.  Self-loops are excluded.
+Node attributes shared across all three lines: `units_demanded`, `source`,
+`priority`.  Only SKUs that have demand in `window_id` **and** are capable on
+at least one line appear as nodes.  Self-loops are excluded.
 
 ```python
 from services.optimizer.app.graph_builder import build_planning_graph, visualize_planning_graph
 
-graphs = build_planning_graph("2025-W01-7d")
-# graphs[14].nodes["ED13LP12"]["predicted_hours"]  → float
-# graphs[14]["ED13LP12"]["ED13LTW"]["hours"]        → float
+G = build_planning_graph("2025-W01-7d")
+# Per-line node cost on L14:
+#   G.nodes["ED13LP12"]["line_data"][14]["predicted_hours"]  → float
+# Per-line changeover cost A→B on L14 (MultiDiGraph edge keyed by line):
+#   G["ED13LP12"]["ED13LTW"][14]["hours"]                    → float
+# Capability gate is implicit — a line is in line_data iff can_produce = True.
 
-fig = visualize_planning_graph(graphs)
+fig = visualize_planning_graph(G)
 fig.savefig("planning_graph.png", dpi=120, bbox_inches="tight")
 ```
+
+This is the graph object the partitioner consumes via
+`graph/line_partitioner.partition_from_graph(G, ...)` — see *Partitioner
+algorithm* below.
+
+### Partitioner algorithm — `graph/line_partitioner.py`
+
+`graph/line_partitioner.py` implements the **two-level partition + routing**
+algorithm that turns the planning graph into a per-line sequence:
+
+1. **Level A — partition.** Constraint-aware LPT initial assignment (most
+   constrained SKUs placed first, then largest node cost first onto the
+   least-loaded feasible line), then a best-improvement local search over
+   three move families:
+
+   a. Single-node moves `v ∈ S_A → S_B` (every feasible `(v, A, B)`).
+   b. Pair swaps `v_A ↔ v_B` across lines, both placements feasible.
+   c. Balance-repair: if `max T_i − min T_i > δ`, move the highest-score
+      node from the bottleneck line to the slack line — only applied when
+      single moves and swaps both stall.
+
+2. **Level B — routing.** For each candidate partition, the per-line sequence
+   is the **exact** Held-Karp DP via
+   `graph/sequence_optimizer.optimize_sequence` (≤ 15 nodes per line in
+   practice, sub-ms per call). Every move trial recomputes **only the two
+   lines it touches**; the third line's `T_i` is reused. Results are cached
+   by `(line, frozenset(skus))` so identical sub-problems hit the cache
+   instead of re-running Held-Karp.
+
+Objective: `min  max_i T_i + ε · Σ_i T_i`. The makespan dominates; the ε
+tie-breaker prevents leaving a line idle when the optimum is degenerate.
+
+Entry points:
+
+```python
+from services.optimizer.app.graph_builder import build_planning_graph
+from line_partitioner import partition_from_graph, verify_partition
+
+G = build_planning_graph("2025-W13-7d")
+result = partition_from_graph(G, time_budget_s=4.0)
+# result.makespan_hours, result.sequences[14], result.dropped, …
+```
+
+`partition_from_graph` is the thin adapter that closes
+`can_produce / node_cost / edge_cost` over `G` and calls `partition_lines`
+(the callable-API form used by the synthetic test path).
+
+### Evaluation — `graph/evaluate_windows.py`
+
+Runs the partitioner end-to-end on **every** `window_id` present in
+`data/clean/demand.csv` (53 windows for the 2025 history) and reports
+`mean / median / stdev / P25 / P75 / min / max` of the makespan along with
+per-line load, spread, drop count, and wall-clock time.
+
+```bash
+python services/optimizer/graph/evaluate_windows.py --budget 4.0
+```
+
+Writes one row per window to `data_experiment/evaluation_all_windows.csv` for
+post-hoc analysis. This is the canonical *aggregate quality* metric for the
+partitioner — used to compare hyperparameter choices and to spot windows
+where capacity is tight (high drop count) or load is unbalanced (large
+spread).
 
 ### `build_historical_wo_graph(window_id, line_id, ...)` → `nx.DiGraph`
 
