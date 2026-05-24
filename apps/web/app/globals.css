@@ -4,39 +4,41 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  /* Damm brand — light (default) */
+  --background: oklch(0.957 0.014 82);       /* cream #F5EFE3 */
+  --foreground: oklch(0.13 0 0);             /* near-black */
+  --card: oklch(1 0 0);                      /* white cards */
+  --card-foreground: oklch(0.13 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.13 0 0);
+  --primary: oklch(0.513 0.212 23.4);        /* Damm red #D6202C */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.94 0.013 81);         /* warm off-white */
+  --secondary-foreground: oklch(0.13 0 0);
+  --muted: oklch(0.94 0.013 81);
+  --muted-foreground: oklch(0.48 0.02 50);
+  --accent: oklch(0.94 0.013 81);
+  --accent-foreground: oklch(0.13 0 0);
+  --destructive: oklch(0.513 0.212 23.4);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.898 0.018 79);           /* warm border */
+  --input: oklch(0.898 0.018 79);
+  --ring: oklch(0.513 0.212 23.4);           /* red ring */
+  /* chart palette */
+  --chart-1: oklch(0.513 0.212 23.4);        /* production — Damm red */
+  --chart-2: oklch(0.75 0.16 55);            /* changeover — amber */
+  --chart-3: oklch(0.55 0.1 240);            /* cleaning — steel blue */
+  --chart-4: oklch(0.5 0.05 250);            /* maintenance — slate */
+  --chart-5: oklch(0.68 0.15 145);           /* OEE — warm green */
+  --radius: 0.5rem;
+  --sidebar: oklch(0.972 0.012 81);          /* slightly warmer than bg */
+  --sidebar-foreground: oklch(0.13 0 0);
+  --sidebar-primary: oklch(0.513 0.212 23.4);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.94 0.013 81);
+  --sidebar-accent-foreground: oklch(0.13 0 0);
+  --sidebar-border: oklch(0.898 0.018 79);
+  --sidebar-ring: oklch(0.513 0.212 23.4);
 }
 
 .dark {
@@ -121,5 +123,15 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Ensure all interactive elements show pointer cursor */
+  button, [role="button"], a, label[for], select {
+    cursor: pointer;
+  }
+  /* Global transition defaults for interactive states */
+  button, a, [role="button"] {
+    transition-property: color, background-color, border-color, opacity, box-shadow;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 }

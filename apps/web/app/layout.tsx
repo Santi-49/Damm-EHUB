@@ -8,8 +8,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Dashboard',
-  description: 'Your operations dashboard',
+  title: 'LineWise — Damm Operations',
+  description: 'Production line sequencing and OEE optimization for Damm canning lines 14, 17 and 19.',
   icons: {
     icon: [
       {
@@ -35,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark bg-background">
+    <html lang="en" className="light bg-background">
       <body className="font-sans antialiased">
         <AuthProvider>
           {children}
