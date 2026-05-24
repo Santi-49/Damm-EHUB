@@ -26,7 +26,8 @@ import { ChatPanel } from './chat-panel'
 import { GANTT_DAY_OPTIONS, GanttChart, type GanttViewport } from './gantt-chart'
 import { LineScorecard } from './line-scorecard'
 import { TopTransitions } from './top-transitions'
-import type { DeltaMetrics, Sequence, SimulationReport } from '@/lib/types/linewise'
+import type { ChatGrounding } from '@/lib/types/chat'
+import type { DeltaMetrics, Line, Sequence, SimulationReport, Slot } from '@/lib/types/linewise'
 
 export function CompareWorkspace() {
   const searchParams = useSearchParams()
@@ -103,6 +104,7 @@ export function CompareWorkspace() {
             solutionId={bundle.solution_id}
             scope={{ view: 'compare' }}
             seedMessages={chatSeedCompare}
+            grounding={buildCompareChatGrounding(bundle, compareResult?.source ?? 'mock')}
           />
         </>
       )}
@@ -343,4 +345,150 @@ function computeAvoidedChangeoverHours(real: Sequence, opt: Sequence) {
       if (match?.changeover_h == null || realSlot.changeover_h == null) return total
       return total + Math.max(0, realSlot.changeover_h - match.changeover_h)
     }, 0)
+}
+
+function buildCompareChatGrounding(bundle: CompareBundle, dataSource: DataSource): ChatGrounding {
+  return {
+    view: 'compare',
+    context: {
+      data_source: dataSource,
+      solution_id: bundle.solution_id,
+      week: bundle.week,
+      headline_delta: {
+        oee_pp: round(bundle.delta.oee_pp * 100, 2),
+        h_changes_saved: round(bundle.delta.h_changes_saved, 2),
+        h_productive_gained: round(bundle.delta.h_productive_gained, 2),
+        coverage_delta_pp: round(bundle.delta.coverage_delta * 100, 2),
+        avoided_changeover_overrun_h: round(
+          computeAvoidedChangeoverHours(bundle.real_sequence, bundle.opt_sequence),
+          2,
+        ),
+      },
+      runs: [
+        buildRunContext('S_real', 'Damm real execution', bundle.real_sequence, bundle.real_simulation),
+        buildRunContext('S_opt', 'LineWise optimized proposal', bundle.opt_sequence, bundle.opt_simulation),
+      ],
+      top_changeover_deltas: buildTopChangeoverDeltas(bundle.real_sequence, bundle.opt_sequence),
+    },
+  }
+}
+
+function buildRunContext(
+  id: 'S_real' | 'S_opt',
+  label: string,
+  sequence: Sequence,
+  simulation: SimulationReport,
+) {
+  const productionSlots = sequence.slots.filter(slot => slot.kind === 'production')
+  const changeoverSlots = sequence.slots.filter(slot => slot.kind === 'changeover')
+  const totalUnits = productionSlots.reduce((sum, slot) => sum + (slot.units ?? 0), 0)
+  const totalChangeoverH = changeoverSlots.reduce((sum, slot) => sum + (slot.changeover_h ?? 0), 0)
+
+  return {
+    id,
+    label,
+    sequence: {
+      id: sequence.id,
+      source: sequence.source,
+      week_id: sequence.week_id,
+      week_start: sequence.week_start,
+      week_end: sequence.week_end,
+      slot_count: sequence.slots.length,
+      production_slot_count: productionSlots.length,
+      changeover_slot_count: changeoverSlots.length,
+      total_units: totalUnits,
+      total_changeover_h: round(totalChangeoverH, 2),
+      by_line: ([14, 17, 19] as Line[]).map(line => buildLineSequenceContext(sequence, line)),
+    },
+    simulation: {
+      sequence_id: simulation.sequence_id,
+      oee_global_pct: round(simulation.oee_global * 100, 2),
+      h_changes: round(simulation.h_changes, 2),
+      h_productive: round(simulation.h_productive, 2),
+      coverage_pct: round(simulation.coverage * 100, 2),
+      makespan_h: round(simulation.makespan_h, 2),
+      oee_per_line: simulation.oee_per_line.map(line => ({
+        line: line.line,
+        oee_pct: round(line.oee * 100, 2),
+        h_productive: round(line.h_productive, 2),
+        h_changeover: round(line.h_changeover, 2),
+        h_cleaning: round(line.h_cleaning, 2),
+        h_maintenance: round(line.h_maintenance, 2),
+        h_idle: round(line.h_idle, 2),
+        coverage_pct: round(line.coverage * 100, 2),
+      })),
+      dropped_skus: simulation.dropped_skus,
+    },
+  }
+}
+
+function buildLineSequenceContext(sequence: Sequence, line: Line) {
+  const slots = sequence.slots
+    .filter(slot => slot.line === line)
+    .sort((a, b) => a.start.localeCompare(b.start))
+  const productionSlots = slots.filter(slot => slot.kind === 'production')
+  const changeoverSlots = slots.filter(slot => slot.kind === 'changeover')
+
+  return {
+    line,
+    slot_count: slots.length,
+    production_slot_count: productionSlots.length,
+    changeover_slot_count: changeoverSlots.length,
+    total_units: productionSlots.reduce((sum, slot) => sum + (slot.units ?? 0), 0),
+    total_changeover_h: round(
+      changeoverSlots.reduce((sum, slot) => sum + (slot.changeover_h ?? 0), 0),
+      2,
+    ),
+    ordered_slots: slots.map(toChatSlot),
+  }
+}
+
+function toChatSlot(slot: Slot) {
+  return {
+    id: slot.id,
+    kind: slot.kind,
+    start: slot.start,
+    end: slot.end,
+    sku: slot.sku,
+    label: slot.label,
+    units: slot.units,
+    oee_expected_pct: slot.oee_expected == null ? undefined : round(slot.oee_expected * 100, 2),
+    oee_actual_pct: slot.oee_actual == null ? undefined : round(slot.oee_actual * 100, 2),
+    changeover_h: slot.changeover_h == null ? undefined : round(slot.changeover_h, 2),
+    changeover_source: slot.changeover_source,
+    changeover_drivers: slot.changeover_drivers,
+  }
+}
+
+function buildTopChangeoverDeltas(real: Sequence, opt: Sequence, limit = 8) {
+  const optChangeovers = opt.slots.filter(slot => slot.kind === 'changeover')
+
+  return real.slots
+    .filter(slot => slot.kind === 'changeover' && slot.changeover_h != null)
+    .map(realSlot => {
+      const optSlot = optChangeovers.find(
+        candidate => candidate.line === realSlot.line && candidate.sku === realSlot.sku,
+      )
+      return {
+        line: realSlot.line,
+        sku: realSlot.sku,
+        real_slot_id: realSlot.id,
+        opt_slot_id: optSlot?.id,
+        real_changeover_h: round(realSlot.changeover_h ?? 0, 2),
+        opt_changeover_h: optSlot?.changeover_h == null ? null : round(optSlot.changeover_h, 2),
+        saved_h: optSlot?.changeover_h == null
+          ? null
+          : round(Math.max(0, (realSlot.changeover_h ?? 0) - optSlot.changeover_h), 2),
+        real_label: realSlot.label,
+        opt_label: optSlot?.label,
+        drivers: realSlot.changeover_drivers ?? optSlot?.changeover_drivers,
+      }
+    })
+    .sort((a, b) => (b.saved_h ?? 0) - (a.saved_h ?? 0))
+    .slice(0, limit)
+}
+
+function round(value: number, digits: number) {
+  if (!Number.isFinite(value)) return null
+  return Number(value.toFixed(digits))
 }

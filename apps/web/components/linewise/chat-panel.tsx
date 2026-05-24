@@ -17,6 +17,7 @@ import { RotateCcw, Send, Sparkles } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type {
+  ChatGrounding,
   ChatMessage,
   ChatRequest,
   ChatResponse,
@@ -34,6 +35,7 @@ interface ChatPanelProps {
   solutionId: string
   scope: ChatScope
   seedMessages: ChatMessage[]
+  grounding?: ChatGrounding
   title?: string
   subtitle?: string
   placeholder?: string
@@ -43,6 +45,7 @@ export function ChatPanel({
   solutionId,
   scope,
   seedMessages,
+  grounding,
   title = 'LineWise assistant',
   subtitle = 'Grounded on the optimiser explanation pack',
   placeholder = 'Ask why a SKU went to this line, what drove a changeover, what changed vs last week…',
@@ -79,6 +82,7 @@ export function ChatPanel({
       scope,
       history,
       user_message: text,
+      grounding,
     }
 
     const response = await sendChatMessage(req)

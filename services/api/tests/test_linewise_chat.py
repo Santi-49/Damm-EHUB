@@ -88,8 +88,10 @@ async def test_chat_with_openai_key_invokes_langchain_openai(
     messages = captured["messages"]
     assert isinstance(messages[0], SystemMessage)
     assert "LineWise" in messages[0].content
+    assert "Markdown report" in messages[0].content
     assert any(
-        isinstance(msg, SystemMessage) and "47.2" in str(msg.content)
+        isinstance(msg, SystemMessage)
+        and '"makespan_h": 47.2' in str(msg.content)
         for msg in messages
     )
     assert any(isinstance(msg, AIMessage) for msg in messages)

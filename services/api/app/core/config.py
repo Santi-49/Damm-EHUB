@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # canned reply so the demo still works without a key.
     openai_api_key: str = ""
     chat_model: str = "gpt-4o-mini"
-    chat_max_tokens: int = 600
+    chat_max_tokens: int = 1600
 
     @property
     def cors_origins_list(self) -> list[str]:

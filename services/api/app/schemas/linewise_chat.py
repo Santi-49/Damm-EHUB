@@ -32,8 +32,8 @@ class ChatScope(BaseModel):
 
 class ChatGrounding(BaseModel):
     """Optional view-data the frontend can send so the LLM can quote real
-    numbers. The frontend currently does not populate this — the LLM works
-    from history + system prompt alone for now."""
+    numbers. Compare view sends S_real and S_opt context so the LLM can
+    produce grounded reports from the two runs."""
 
     view: ChatView
     context: Any

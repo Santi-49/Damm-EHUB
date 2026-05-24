@@ -7,9 +7,9 @@ Flow per turn:
   3. Return the assistant text in ChatResponse.
 
 The frontend holds the conversation history in localStorage, so this endpoint
-is stateless — every call is the full conversation. Once we ground on the
-real ExplanationPack we'll add the grounding payload to the system prompt
-(see ChatRequest.grounding, optional).
+is stateless — every call is the full conversation. When the frontend sends a
+grounding payload (see ChatRequest.grounding, optional), we add it to the
+system context so the model can quote current-view numbers.
 
 If ``OPENAI_API_KEY`` is empty we fall back to a canned reply so the demo
 still works without a key.
@@ -17,6 +17,7 @@ still works without a key.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException, status
@@ -40,10 +41,14 @@ SYSTEM_PROMPT = """You are LineWise, an AI assistant embedded in a production pl
 Your job: help operators and planners understand why the optimiser produced a particular plan, why a transition was expensive, what a what-if scenario would do, or why an SKU was dropped. Always ground in the data shown in the conversation — never invent numbers.
 
 Style:
-- Concise. 2–4 sentences typical, unless the user asks for detail.
+- Respond in the same language as the user.
+- Write a detailed Markdown report when analysis context is provided, especially for S_real vs S_opt comparisons.
+- Use clear headings, short paragraphs, bullet lists, and Markdown tables when they make the report easier to scan.
+- Include sections such as executive summary, S_real vs S_opt comparison, line-by-line impact, key transitions, risks, and recommendations when relevant.
 - Plain language. Operators read this, not data scientists.
 - Quote specific numbers when you have them (e.g. "DAMM-1/3 dropped 4000 units, costing €720").
 - If asked about something not in the context, say so honestly.
+- Do not wrap the full answer in a code block.
 
 Domain primer:
 - 3 canning lines: L14 (1/2 + 1/3 formats), L17 (1/3 only), L19 (1/2 + 1/3 + 2/5).
@@ -67,7 +72,8 @@ def _to_lc_messages(req: ChatRequest) -> list[SystemMessage | HumanMessage | AIM
                 content=(
                     f"Current view: {req.grounding.view}.\n"
                     f"Scope: {req.scope.model_dump(exclude_none=True)}\n\n"
-                    f"View data (use this to quote numbers):\n{req.grounding.context}"
+                    "View data as JSON (use this to quote numbers and compare the "
+                    f"available runs):\n{_format_grounding_context(req.grounding.context)}"
                 )
             )
         )
@@ -85,6 +91,14 @@ def _to_lc_messages(req: ChatRequest) -> list[SystemMessage | HumanMessage | AIM
 
     messages.append(HumanMessage(content=req.user_message))
     return messages
+
+
+def _format_grounding_context(context: object) -> str:
+    """Serialize arbitrary frontend grounding as readable JSON for the LLM."""
+    try:
+        return json.dumps(context, ensure_ascii=False, indent=2, default=str)
+    except TypeError:
+        return str(context)
 
 
 @router.post("/chat", response_model=ChatResponse)
