@@ -74,6 +74,15 @@ SKUs first. `feasible = False` then, and `dropped` lists what was left out.
 breakdown or urgent demand. It respects `freeze_days`: the first N days of
 `previous` are taken as fixed.
 
+For the current v1 engine, the production wrapper exposes two concrete
+what-if variants:
+
+- `replan_graph(...)` for breakdown / maintenance downtime.
+- `replan_urgent_demand_graph(...)` for urgent demand. The urgent order is
+  added as a distinct demand node, work already started at `introduced_at` is
+  frozen, and v1 reruns the residual problem while forcing the urgent node
+  into the requested `required_by` window.
+
 ## Stack
 
 - **v1 graph partitioner** (`services/optimizer/graph/line_partitioner.py`) —

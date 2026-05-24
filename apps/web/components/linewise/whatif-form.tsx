@@ -40,6 +40,8 @@ export function WhatIfForm() {
   const [scenarioId, setScenarioId] = useState<ScenarioId>('urgent-demand')
   const [introductionDay, setIntroductionDay] = useState('2026-05-20')
   const [introductionHour, setIntroductionHour] = useState(8)
+  const [requiredDay, setRequiredDay] = useState('2026-05-22')
+  const [requiredHour, setRequiredHour] = useState(18)
   const [urgentSku,  setUrgentSku]  = useState('FREQ-2/5-25')
   const [urgentUnits, setUrgentUnits] = useState(8000)
   const [breakdownLine, setBreakdownLine] = useState<14 | 17 | 19>(14)
@@ -51,6 +53,7 @@ export function WhatIfForm() {
 
   const selectedSku = SKU_OPTIONS.find(s => s.sku === urgentSku)!
   const introducedAt = `${introductionDay}T${String(introductionHour).padStart(2, '0')}:00:00`
+  const requiredBy = `${requiredDay}T${String(requiredHour).padStart(2, '0')}:00:00`
 
   async function handleReplan() {
     setLoading(true)
@@ -60,6 +63,7 @@ export function WhatIfForm() {
     const response = await runReplan({
       scenario_id: scenarioId,
       introduced_at: introducedAt,
+      required_by: scenarioId === 'urgent-demand' ? requiredBy : undefined,
       urgent_sku: urgentSku,
       urgent_units: urgentUnits,
       breakdown_line: breakdownLine,
@@ -172,6 +176,32 @@ export function WhatIfForm() {
                   <p className="text-xs text-muted-foreground mt-1.5">
                     ≈ {(urgentUnits / 2375).toFixed(1)} h extra production on L19
                   </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Required by day</label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={requiredDay}
+                    onChange={e => setRequiredDay(e.target.value)}
+                  >
+                    {DAY_OPTIONS.map(d => (
+                      <option key={d.value} value={d.value}>{d.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Required by hour</label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={requiredHour}
+                    onChange={e => setRequiredHour(Number(e.target.value))}
+                  >
+                    {HOUR_OPTIONS.map(h => (
+                      <option key={h.value} value={h.value}>{h.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>

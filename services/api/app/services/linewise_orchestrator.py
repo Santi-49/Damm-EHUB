@@ -28,9 +28,11 @@ from services.optimizer.app.graph_builder import (
 )
 from services.optimizer.app.implementation import (
     OptimizerResult,
+    UrgentDemandResult,
     WhatIfResult,
     optimize_graph,
     replan_graph,
+    replan_urgent_demand_graph,
 )
 
 from app.schemas.linewise import (
@@ -55,6 +57,7 @@ from app.schemas.linewise import (
 DATA_DIR = _REPO_ROOT / "data" / "clean"
 LINE_IDS: tuple[int, ...] = (14, 17, 19)
 PLANT_START_HOUR = 6  # shift starts at 06:00 on window_start Monday
+_MISSING_EDGE_HOURS = 8.0
 
 
 # ---------------------------------------------------------------------------
@@ -400,6 +403,12 @@ class LinewiseOrchestrator:
     # ------------------------------------------------------------------
 
     def replan(self, request: ReplanRequest) -> ReplanScenario:
+        """Re-plan the remainder of the week after a what-if perturbation."""
+        if request.scenario_id == "urgent-demand":
+            return self._replan_urgent_demand(request)
+        return self._replan_breakdown(request)
+
+    def _replan_breakdown(self, request: ReplanRequest) -> ReplanScenario:
         """Re-plan the remainder of the week after a line breakdown."""
         if request.breakdown_line is None:
             raise ValueError("breakdown_line is required for a breakdown scenario")
@@ -506,6 +515,129 @@ class LinewiseOrchestrator:
                 f"({request.breakdown_day}). After {maintenance_h:.0f}h repair the "
                 f"plan is re-optimised. New makespan: {wif.makespan_hours:.1f}h "
                 f"(baseline {wif.original_makespan_hours:.1f}h)."
+            ),
+            recommendation=recommendation,
+            sequence=replan_seq,
+            report=replan_report,
+            base=base_report,
+        )
+
+    def _replan_urgent_demand(self, request: ReplanRequest) -> ReplanScenario:
+        """Re-plan the remaining week after urgent demand arrives."""
+        if not request.introduced_at:
+            raise ValueError("introduced_at is required for an urgent-demand scenario")
+        if not request.urgent_sku:
+            raise ValueError("urgent_sku is required for an urgent-demand scenario")
+        if request.urgent_units is None or request.urgent_units <= 0:
+            raise ValueError("urgent_units must be positive for an urgent-demand scenario")
+
+        demand = self._get_demand()
+        capability = self._get_capability()
+
+        introduced_ts = pd.Timestamp(request.introduced_at)
+        introduced_day = pd.Timestamp(introduced_ts.date())
+        mask = (
+            pd.to_datetime(demand["window_start"]) <= introduced_day
+        ) & (
+            pd.to_datetime(demand["window_end"]) >= introduced_day
+        )
+        matching = demand[mask]
+        if matching.empty:
+            raise KeyError(
+                f"No planning window found for introduced_at={request.introduced_at!r}"
+            )
+
+        row0 = matching.iloc[0]
+        week_id = str(row0["window_id"])
+        w_start = pd.Timestamp(row0["window_start"])
+        w_end = pd.Timestamp(row0["window_end"])
+        solution_id = str(uuid.uuid4())
+
+        graph = build_planning_graph(week_id, demand_df=demand, capability_df=capability)
+        if graph.number_of_nodes() == 0:
+            raise ValueError(f"No demand nodes found for window {week_id!r}")
+
+        plan_start_dt = datetime(
+            w_start.year, w_start.month, w_start.day, PLANT_START_HOUR
+        )
+        introduced_dt = _naive_datetime(introduced_ts)
+        introduced_offset_h = max(
+            0.0, (introduced_dt - plan_start_dt).total_seconds() / 3600.0
+        )
+
+        if request.required_by:
+            required_dt = _naive_datetime(pd.Timestamp(request.required_by))
+        else:
+            required_dt = plan_start_dt + timedelta(days=7)
+        required_by_h = (required_dt - plan_start_dt).total_seconds() / 3600.0
+        if required_by_h < introduced_offset_h:
+            raise ValueError("required_by must be at or after introduced_at")
+
+        baseline_result, urgent, augmented_graph = replan_urgent_demand_graph(
+            graph,
+            urgent_sku=request.urgent_sku,
+            urgent_units=int(request.urgent_units),
+            introduced_at_hours=introduced_offset_h,
+            required_by_hours=required_by_h,
+            capability_df=capability,
+        )
+
+        base_seq = _opt_result_to_sequence(
+            baseline_result, graph, week_id, w_start, w_end, solution_id
+        )
+        base_report = _opt_simulation_report(
+            base_seq.id, baseline_result, graph, demand, week_id, capability
+        )
+
+        replan_seq = _urgent_to_sequence(
+            urgent, augmented_graph, week_id, w_start, solution_id
+        )
+        replan_report = _urgent_simulation_report(
+            urgent, augmented_graph, demand, week_id, capability, solution_id
+        )
+
+        delta_h = urgent.makespan_hours - urgent.original_makespan_hours
+        moved_n = len(urgent.moved_skus)
+        constraints = [
+            (
+                f"Frozen prefix kept through hour {introduced_offset_h:.1f}; "
+                "only unstarted demand was re-optimised."
+            ),
+            (
+                f"Urgent demand completes at hour {urgent.urgent_end_hours:.1f}, "
+                f"before the required deadline at hour {required_by_h:.1f}."
+            ),
+        ]
+        if moved_n:
+            constraints.append(f"{moved_n} residual SKU(s) moved across lines.")
+
+        recommendation = ReplanRecommendation(
+            headline=(
+                f"Assign urgent {request.urgent_sku} to L{urgent.assigned_line} "
+                f"inside the required window"
+            ),
+            why=(
+                f"The order arrives at hour {introduced_offset_h:.1f} of the plan "
+                f"({request.introduced_at}). V1 reruns the residual problem and "
+                f"pins the urgent node first on L{urgent.assigned_line}, finishing "
+                f"at hour {urgent.urgent_end_hours:.1f}. Makespan changes "
+                f"{delta_h:+.1f}h vs baseline."
+            ),
+            constraints=constraints,
+            assigned_line=urgent.assigned_line,  # type: ignore[arg-type]
+        )
+
+        return ReplanScenario(
+            id=f"urgent-{solution_id[:8]}",
+            label=(
+                f"Urgent demand · {request.urgent_units:,} units "
+                f"{request.urgent_sku}"
+            ),
+            description=(
+                f"New demand arrives at {request.introduced_at}; required by "
+                f"{required_dt.isoformat()}. The replan assigns it to "
+                f"L{urgent.assigned_line} from hour {urgent.urgent_start_hours:.1f} "
+                f"to {urgent.urgent_end_hours:.1f}."
             ),
             recommendation=recommendation,
             sequence=replan_seq,
@@ -724,6 +856,217 @@ def _wif_simulation_report(
         h_productive=round(total_prod_h, 2),
         coverage=round(coverage, 4),
         makespan_h=round(_safe_float(wif.makespan_hours), 2),
+        dropped_skus=dropped_sku_list,
+    )
+
+
+def _urgent_to_sequence(
+    urgent: UrgentDemandResult,
+    graph: nx.MultiDiGraph,
+    week_id: str,
+    w_start: pd.Timestamp,
+    solution_id: str,
+) -> Sequence:
+    """Build a frozen-prefix + urgent-first residual sequence."""
+    seq_id = f"urgent-{solution_id[:8]}"
+    slots: list[Slot] = []
+    base_ts = datetime(w_start.year, w_start.month, w_start.day, PLANT_START_HOUR, 0, 0)
+
+    for line in LINE_IDS:
+        committed = tuple(str(s) for s in urgent.committed_per_line.get(line, ()))
+        cursor = base_ts
+        for i, sku in enumerate(committed):
+            prod_h = _node_predicted_hours(graph, sku, line)
+            prod_end = cursor + timedelta(hours=prod_h)
+            slots.append(
+                Slot(
+                    id=f"urgent-L{line}-c{i}",
+                    line=line,  # type: ignore[arg-type]
+                    start=cursor.isoformat(),
+                    end=prod_end.isoformat(),
+                    kind="production",
+                    sku=_display_sku(graph, sku),
+                    label=_display_sku(graph, sku),
+                    units=_node_units(graph, sku),
+                )
+            )
+            cursor = prod_end
+            if i < len(committed) - 1:
+                next_sku = committed[i + 1]
+                co_h = _edge_hours(graph, sku, next_sku, line)
+                if co_h > 0:
+                    slots.append(
+                        Slot(
+                            id=f"urgent-L{line}-cco{i}",
+                            line=line,  # type: ignore[arg-type]
+                            start=cursor.isoformat(),
+                            end=(cursor + timedelta(hours=co_h)).isoformat(),
+                            kind="changeover",
+                            sku=_display_sku(graph, sku),
+                            label=f"→ {_display_sku(graph, next_sku)}",
+                            changeover_h=co_h,
+                            changeover_source="teorico",
+                        )
+                    )
+                    cursor += timedelta(hours=co_h)
+
+        cursor = base_ts + timedelta(hours=urgent.baseline_hours_per_line[line])
+        new_seq = tuple(str(s) for s in urgent.new_sequences.get(line, ()))
+        for i, sku in enumerate(new_seq):
+            if line == urgent.assigned_line and sku == str(urgent.urgent_node) and i == 0:
+                setup_h = urgent.pre_urgent_changeover_hours_per_line.get(line, 0.0)
+                if setup_h > 0:
+                    slots.append(
+                        Slot(
+                            id=f"urgent-L{line}-setup",
+                            line=line,  # type: ignore[arg-type]
+                            start=cursor.isoformat(),
+                            end=(cursor + timedelta(hours=setup_h)).isoformat(),
+                            kind="changeover",
+                            sku=_display_sku(graph, sku),
+                            label=f"→ {_display_sku(graph, sku)}",
+                            changeover_h=setup_h,
+                            changeover_source="teorico",
+                        )
+                    )
+                    cursor += timedelta(hours=setup_h)
+
+            prod_h = _node_predicted_hours(graph, sku, line)
+            prod_end = cursor + timedelta(hours=prod_h)
+            label = _display_sku(graph, sku)
+            if graph.has_node(sku) and graph.nodes[sku].get("is_urgent"):
+                label = f"{label} (urgent)"
+            slots.append(
+                Slot(
+                    id=f"urgent-L{line}-r{i}",
+                    line=line,  # type: ignore[arg-type]
+                    start=cursor.isoformat(),
+                    end=prod_end.isoformat(),
+                    kind="production",
+                    sku=_display_sku(graph, sku),
+                    label=label,
+                    units=_node_units(graph, sku),
+                )
+            )
+            cursor = prod_end
+
+            if i < len(new_seq) - 1:
+                next_sku = new_seq[i + 1]
+                co_h = _edge_hours(graph, sku, next_sku, line)
+                if co_h > 0:
+                    slots.append(
+                        Slot(
+                            id=f"urgent-L{line}-rco{i}",
+                            line=line,  # type: ignore[arg-type]
+                            start=cursor.isoformat(),
+                            end=(cursor + timedelta(hours=co_h)).isoformat(),
+                            kind="changeover",
+                            sku=_display_sku(graph, sku),
+                            label=f"→ {_display_sku(graph, next_sku)}",
+                            changeover_h=co_h,
+                            changeover_source="teorico",
+                        )
+                    )
+                    cursor += timedelta(hours=co_h)
+
+    return Sequence(
+        id=seq_id,
+        week_id=week_id,
+        week_start=w_start.date().isoformat(),
+        week_end=(w_start + timedelta(days=6)).date().isoformat(),
+        source="replan",
+        slots=slots,
+    )
+
+
+def _urgent_simulation_report(
+    urgent: UrgentDemandResult,
+    graph: nx.MultiDiGraph,
+    demand: pd.DataFrame,
+    week_id: str,
+    capability: pd.DataFrame,
+    solution_id: str,
+) -> SimulationReport:
+    seq_id = f"urgent-{solution_id[:8]}"
+    week_demand = demand[demand["window_id"] == week_id]
+    total_demanded = int(week_demand["units_demanded"].sum()) + urgent.urgent_units
+
+    cap_oee: dict[int, float] = {}
+    for line in LINE_IDS:
+        cap_line = capability[(capability["line_id"] == line) & capability["can_produce"]]
+        cap_oee[line] = (
+            float(cap_line["median_oee"].median()) if not cap_line.empty else 0.5
+        )
+    global_oee = float(
+        capability[capability["can_produce"]]["median_oee"].median()
+        if not capability.empty
+        else 0.5
+    )
+
+    covered_nodes: set[str] = set()
+    for line in LINE_IDS:
+        covered_nodes.update(str(s) for s in urgent.committed_per_line.get(line, ()))
+        covered_nodes.update(str(s) for s in urgent.new_sequences.get(line, ()))
+
+    covered_units = urgent.urgent_units if str(urgent.urgent_node) in covered_nodes else 0
+    dropped_sku_list: list[DroppedSku] = []
+    for _, row in week_demand.iterrows():
+        sku = str(row["sku_id"])
+        units_dem = int(row["units_demanded"])
+        if sku not in covered_nodes:
+            dropped_sku_list.append(
+                DroppedSku(
+                    sku=sku,
+                    units_demanded=units_dem,
+                    units_dropped=units_dem,
+                    margin_lost=0.0,
+                    reason="urgent_replan_capacity",
+                )
+            )
+        else:
+            covered_units += units_dem
+
+    if str(urgent.urgent_node) not in covered_nodes:
+        dropped_sku_list.append(
+            DroppedSku(
+                sku=str(urgent.urgent_sku),
+                units_demanded=urgent.urgent_units,
+                units_dropped=urgent.urgent_units,
+                margin_lost=0.0,
+                reason="urgent_deadline",
+            )
+        )
+
+    coverage = covered_units / total_demanded if total_demanded > 0 else 1.0
+    line_metrics_list: list[LineMetrics] = []
+    total_prod_h = 0.0
+    total_co_h = 0.0
+    for line in LINE_IDS:
+        h_prod = _safe_float(urgent.residual_production_hours_per_line.get(line, 0.0))
+        h_co = _safe_float(urgent.residual_changeover_hours_per_line.get(line, 0.0))
+        line_metrics_list.append(
+            LineMetrics(
+                line=line,  # type: ignore[arg-type]
+                oee=round(cap_oee.get(line, global_oee), 4),
+                h_productive=round(h_prod, 2),
+                h_changeover=round(h_co, 2),
+                h_cleaning=8.0,
+                h_maintenance=0.0,
+                h_idle=0.0,
+                coverage=round(coverage, 4),
+            )
+        )
+        total_prod_h += h_prod
+        total_co_h += h_co
+
+    return SimulationReport(
+        sequence_id=seq_id,
+        oee_global=round(global_oee, 4),
+        oee_per_line=line_metrics_list,
+        h_changes=round(total_co_h, 2),
+        h_productive=round(total_prod_h, 2),
+        coverage=round(coverage, 4),
+        makespan_h=round(_safe_float(urgent.makespan_hours), 2),
         dropped_skus=dropped_sku_list,
     )
 
@@ -1059,6 +1402,56 @@ def _opt_simulation_report(
 # ---------------------------------------------------------------------------
 # Tiny helpers
 # ---------------------------------------------------------------------------
+
+def _naive_datetime(value: pd.Timestamp) -> datetime:
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert(None)
+    return ts.to_pydatetime()
+
+
+def _display_sku(graph: nx.MultiDiGraph, node: str) -> str:
+    if graph.has_node(node):
+        attrs = graph.nodes[node]
+        return str(attrs.get("display_sku", attrs.get("urgent_base_sku", node)))
+    return str(node)
+
+
+def _node_units(graph: nx.MultiDiGraph, node: str) -> int:
+    if graph.has_node(node):
+        return int(graph.nodes[node].get("units_demanded", 0) or 0)
+    return 0
+
+
+def _node_predicted_hours(graph: nx.MultiDiGraph, node: str, line: int) -> float:
+    if not graph.has_node(node):
+        return 0.0
+    line_data = graph.nodes[node].get("line_data", {})
+    return _safe_float(line_data.get(line, {}).get("predicted_hours", 0.0))
+
+
+def _edge_base_sku(graph: nx.MultiDiGraph, node: str) -> str:
+    if graph.has_node(node):
+        return str(graph.nodes[node].get("urgent_base_sku", node))
+    return str(node)
+
+
+def _edge_hours(graph: nx.MultiDiGraph, source: str, target: str, line: int) -> float:
+    if source == target:
+        return 0.0
+    base_source = _edge_base_sku(graph, source)
+    base_target = _edge_base_sku(graph, target)
+    if base_source == base_target:
+        return 0.0
+
+    for src, dst in ((source, target), (base_source, base_target)):
+        if not (graph.has_node(src) and graph.has_node(dst)):
+            continue
+        edge_data = graph.get_edge_data(src, dst, key=line)
+        if edge_data is not None:
+            return _safe_float(edge_data.get("hours", _MISSING_EDGE_HOURS))
+    return _MISSING_EDGE_HOURS
+
 
 def _safe_float(v: Any, fallback: float = 0.0) -> float:
     try:

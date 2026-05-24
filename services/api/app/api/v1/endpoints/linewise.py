@@ -72,8 +72,14 @@ async def optimize_plan(body: PlanOptimizeRequest) -> PlanOptimizeResponse:
 
 @router.post("/replan", response_model=ReplanScenario)
 async def replan_scenario(body: ReplanRequest) -> ReplanScenario:
-    """Re-plan the remainder of the week after a line goes offline for maintenance."""
-    if body.breakdown_line is None or body.breakdown_day is None:
+    """Re-plan the remainder of the week after a what-if perturbation."""
+    if body.scenario_id == "urgent-demand":
+        if not body.introduced_at or not body.urgent_sku or body.urgent_units is None:
+            raise HTTPException(
+                status_code=422,
+                detail="introduced_at, urgent_sku and urgent_units are required",
+            )
+    elif body.breakdown_line is None or body.breakdown_day is None:
         raise HTTPException(
             status_code=422,
             detail="breakdown_line and breakdown_day are required",

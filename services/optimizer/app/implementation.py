@@ -414,6 +414,111 @@ def _adapt_partition_result(
     )
 
 
+def _graph_with_urgent_node(
+    graph: nx.MultiDiGraph,
+    *,
+    urgent_sku: str,
+    urgent_units: int,
+    capability_df: pd.DataFrame | None,
+) -> tuple[nx.MultiDiGraph, str]:
+    if urgent_units <= 0:
+        raise ValueError(f"urgent_units must be positive, got {urgent_units}")
+
+    urgent_node = _make_urgent_node_id(graph, urgent_sku, urgent_units)
+    line_data = _urgent_line_data_from_graph(graph, urgent_sku, urgent_units)
+    if not line_data and capability_df is not None:
+        line_data = _urgent_line_data_from_capability(
+            capability_df,
+            urgent_sku,
+            urgent_units,
+        )
+    if not line_data:
+        raise ValueError(
+            f"urgent_sku {urgent_sku!r} is not known in the current graph "
+            "or line_capability data"
+        )
+
+    augmented = graph.copy()
+    augmented.add_node(
+        urgent_node,
+        units_demanded=int(urgent_units),
+        source="whatif_usuario",
+        priority=5,
+        urgent_base_sku=urgent_sku,
+        display_sku=urgent_sku,
+        is_urgent=True,
+        line_data=line_data,
+    )
+    return augmented, urgent_node
+
+
+def _make_urgent_node_id(
+    graph: nx.MultiDiGraph,
+    urgent_sku: str,
+    urgent_units: int,
+) -> str:
+    base = f"{urgent_sku}__urgent_{urgent_units}"
+    candidate = base
+    suffix = 2
+    while graph.has_node(candidate):
+        candidate = f"{base}_{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _urgent_line_data_from_graph(
+    graph: nx.MultiDiGraph,
+    urgent_sku: str,
+    urgent_units: int,
+) -> dict[int, dict[str, float]]:
+    if not graph.has_node(urgent_sku):
+        return {}
+
+    node = graph.nodes[urgent_sku]
+    base_units = int(node.get("units_demanded", 0) or 0)
+    if base_units <= 0:
+        return {}
+
+    scale = float(urgent_units) / float(base_units)
+    out: dict[int, dict[str, float]] = {}
+    for line, data in node.get("line_data", {}).items():
+        out[int(line)] = {
+            "predicted_hours": float(data.get("predicted_hours", 0.0)) * scale,
+        }
+    return out
+
+
+def _urgent_line_data_from_capability(
+    capability_df: pd.DataFrame,
+    urgent_sku: str,
+    urgent_units: int,
+) -> dict[int, dict[str, float]]:
+    if capability_df.empty or "sku_id" not in capability_df.columns:
+        return {}
+
+    cap = capability_df[capability_df["sku_id"].astype(str) == str(urgent_sku)].copy()
+    if cap.empty:
+        return {}
+
+    can_produce = cap["can_produce"].astype(str).str.lower().isin(("true", "1", "yes"))
+    cap = cap[can_produce]
+    out: dict[int, dict[str, float]] = {}
+    for _, row in cap.iterrows():
+        speed = float(row.get("median_speed_uds_per_hour", 0.0) or 0.0)
+        if speed <= 0:
+            continue
+        out[int(row["line_id"])] = {
+            "predicted_hours": float(urgent_units) / speed,
+        }
+    return out
+
+
+def _base_sku_for_edge(graph: nx.MultiDiGraph, node: str) -> str:
+    if graph.has_node(node):
+        return str(graph.nodes[node].get("urgent_base_sku", node))
+    return str(node)
+
+
 def _result_to_contract_sequence(
     result: OptimizerResult,
     graph: nx.MultiDiGraph,
@@ -520,8 +625,10 @@ __all__ = [
     "GraphOptimizer",
     "LineRoute",
     "OptimizerResult",
+    "UrgentDemandResult",
     "WhatIfResult",
     "optimize_graph",
     "optimize_window",
     "replan_graph",
+    "replan_urgent_demand_graph",
 ]

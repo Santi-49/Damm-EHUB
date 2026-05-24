@@ -56,6 +56,7 @@ export interface CompareBundle {
 export interface ReplanRequest {
   scenario_id: string
   introduced_at?: string
+  required_by?: string
   urgent_sku?: string
   urgent_units?: number
   breakdown_line?: Line

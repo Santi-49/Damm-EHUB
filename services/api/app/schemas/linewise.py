@@ -179,6 +179,7 @@ class ReplanRequest(BaseModel):
     breakdown_day: Optional[str] = None  # ISO date "YYYY-MM-DD"
     breakdown_hours: Optional[float] = None  # maintenance duration in hours
     introduced_at: Optional[str] = None
+    required_by: Optional[str] = None
     urgent_sku: Optional[str] = None
     urgent_units: Optional[int] = None
 

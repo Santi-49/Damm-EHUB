@@ -239,6 +239,7 @@ Used by the What-if page after a perturbation.
 type ReplanRequest = {
   scenario_id: string
   introduced_at?: string
+  required_by?: string
   urgent_sku?: string
   urgent_units?: number
   breakdown_line?: 14 | 17 | 19
@@ -248,7 +249,9 @@ type ReplanRequest = {
 ```
 
 `introduced_at` is the ISO timestamp when the planner learns about the perturbation.
-The backend should replan from this point onward.
+The backend should replan from this point onward. For urgent demand, `required_by`
+is the ISO timestamp by which the new demand must be completed; when omitted,
+the backend treats the end of the selected planning week as the deadline.
 
 Current frontend scenario IDs:
 
