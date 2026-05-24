@@ -242,6 +242,9 @@ class LinewiseOrchestrator:
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=6)
         window_id = "whatif"
+        solution_id = str(uuid.uuid4())
+        w_start_ts = pd.Timestamp(week_start)
+        w_end_ts = pd.Timestamp(week_end)
 
         demand_rows = [
             {
@@ -269,6 +272,14 @@ class LinewiseOrchestrator:
                 h_saved=0.0,
                 coverage_pct=0.0,
                 dropped_skus=[p.sku_id for p in request.products],
+                sequence=Sequence(
+                    id=f"opt-{solution_id[:8]}",
+                    week_id=window_id,
+                    week_start=str(week_start),
+                    week_end=str(week_end),
+                    source="opt",
+                    slots=[],
+                ),
             )
 
         result = optimize_graph(graph)
@@ -370,6 +381,10 @@ class LinewiseOrchestrator:
             max(0.0, 1.0 - dropped_units / total_units) if total_units > 0 else 1.0
         )
 
+        sequence = _opt_result_to_sequence(
+            result, graph, window_id, w_start_ts, w_end_ts, solution_id
+        )
+
         return PlanOptimizeResponse(
             nodes=nodes,
             edges=edges,
@@ -377,6 +392,7 @@ class LinewiseOrchestrator:
             h_saved=round(h_saved, 2),
             coverage_pct=round(coverage_pct, 4),
             dropped_skus=list(result.dropped),
+            sequence=sequence,
         )
 
     # ------------------------------------------------------------------
