@@ -144,7 +144,7 @@ export interface ReplanScenario {
 export const replanScenarios: ReplanScenario[] = [
   {
     id:          'urgent-demand',
-    label:       'Urgent demand — +8 000 units FREQ-2/5-25',
+    label:       'Urgent demand — +N units of selected SKU',
     description: 'Client orders 8 000 additional cans of FreqFresh 2/5. Where does LineWise fit them?',
     recommendation: {
       assignedLine: 19,
@@ -162,7 +162,7 @@ export const replanScenarios: ReplanScenario[] = [
   },
   {
     id:          'l14-breakdown',
-    label:       'Breakdown — L14 offline 8 h (Wed 20 May)',
+    label:       'Breakdown — Line X offline for Y hours',
     description: 'An unplanned mechanical failure takes L14 offline for 8 h on Wednesday morning.',
     recommendation: {
       assignedLine: 19,

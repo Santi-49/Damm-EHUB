@@ -39,6 +39,21 @@ export interface ChatScope {
 }
 
 /**
+ * The current view's data, sent verbatim to the LLM so it can quote real
+ * numbers ("DAMM-1/3 dropped 4000 units, costing €720"). Each view ships its
+ * own shape under `context` — the LLM sees it as JSON.
+ *
+ * Kept loose (`unknown`) on purpose: the contract between the frontend and the
+ * chat route is "give us whatever the user is looking at", not a rigid schema.
+ * Once the backend takes over chat, it will pull this from the
+ * ExplanationPack by solution_id and `grounding` can go away.
+ */
+export interface ChatGrounding {
+  view: ChatView
+  context: unknown
+}
+
+/**
  * One turn from the frontend. For the very first turn (welcome / solution
  * narration), send an empty `history` and a seed `user_message` agreed with
  * the backend, e.g. "<<intro>>".
@@ -50,6 +65,8 @@ export interface ChatRequest {
   /** Prior turns, oldest first. Excludes the just-typed user_message. */
   history: ChatMessage[]
   user_message: string
+  /** Optional grounding payload — the LLM uses this to quote real numbers. */
+  grounding?: ChatGrounding
 }
 
 /**

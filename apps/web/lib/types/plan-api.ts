@@ -1,9 +1,10 @@
 // Plan optimise endpoint — request / response shapes.
 //
 // Both the CSV flow (client-side parsed) and the manual flow send the same
-// PlanOptimizeRequest JSON body. The response drives the SequenceGraph.
+// PlanOptimizeRequest JSON body. The response drives the SequenceGraph and
+// the resulting Gantt.
 
-import type { Line } from './linewise'
+import type { Line, Sequence } from './linewise'
 
 export interface PlanProduct {
   sku_id: string
@@ -46,4 +47,6 @@ export interface PlanOptimizeResponse {
   coverage_pct: number
   /** SKU ids that were dropped under capacity */
   dropped_skus: string[]
+  /** Full per-slot schedule rendered by the Gantt below the graph. */
+  sequence: Sequence
 }

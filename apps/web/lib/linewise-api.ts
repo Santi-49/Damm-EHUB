@@ -8,9 +8,11 @@ import {
   simulationReal,
 } from '@/lib/fixtures'
 import { pickFallback } from '@/lib/fixtures/chat-messages'
+import { impactAtlas2025 } from '@/lib/fixtures/impact-atlas'
 import { replanScenarios, type ReplanScenario } from '@/lib/fixtures/replan-scenarios'
 import type { ChatRequest, ChatResponse } from '@/lib/types/chat'
-import type { Line, Sequence, SimulationReport } from '@/lib/types/linewise'
+import type { ImpactAtlas } from '@/lib/types/insights'
+import type { Line, Sequence, SimulationReport, Slot } from '@/lib/types/linewise'
 import type {
   PlanGraphEdge,
   PlanGraphNode,
@@ -53,6 +55,7 @@ export interface CompareBundle {
 
 export interface ReplanRequest {
   scenario_id: string
+  introduced_at?: string
   urgent_sku?: string
   urgent_units?: number
   breakdown_line?: Line
@@ -139,6 +142,15 @@ export async function listWeeks(): Promise<ApiResult<WeekOption[]>> {
   }
 }
 
+export async function getImpactAtlas(year = 2025): Promise<ApiResult<ImpactAtlas>> {
+  try {
+    const atlas = await linewiseRequest<ImpactAtlas>(`/linewise/impact-atlas?year=${year}`)
+    return { data: atlas, source: 'backend' }
+  } catch {
+    return { data: impactAtlas2025, source: 'mock' }
+  }
+}
+
 export async function getCompareBundle(weekId: string): Promise<ApiResult<CompareBundle>> {
   try {
     const bundle = await linewiseRequest<CompareBundle>(
@@ -199,7 +211,9 @@ export async function sendChatMessage(request: ChatRequest): Promise<ApiResult<C
 }
 
 function buildMockCompareBundle(weekId: string): CompareBundle {
-  const week = MOCK_WEEK_OPTIONS.find(w => w.id === weekId) ?? MOCK_WEEK_OPTIONS[0]
+  const week = MOCK_WEEK_OPTIONS.find(w => w.id === weekId)
+    ?? buildWeekOptionFromAtlas(weekId)
+    ?? MOCK_WEEK_OPTIONS[0]
 
   return {
     week,
@@ -209,6 +223,25 @@ function buildMockCompareBundle(weekId: string): CompareBundle {
     real_simulation: simulationReal,
     opt_simulation: simulationOpt,
     delta: computeDelta(),
+  }
+}
+
+// Synthesise a WeekOption when the user lands on Compare from the Insights
+// heatmap with a week we haven't manually scripted. Keeps the header honest
+// (correct week id + date range) even though the sequences below remain the
+// demo fixtures until the backend ships.
+function buildWeekOptionFromAtlas(weekId: string): WeekOption | null {
+  const entry = impactAtlas2025.weeks.find(w => w.week_id === weekId)
+  if (!entry) return null
+  const start = new Date(entry.week_start + 'T00:00:00Z')
+  const end = new Date(entry.week_end + 'T00:00:00Z')
+  const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  return {
+    id: entry.week_id,
+    label: `${entry.week_id} · from Impact Atlas`,
+    range: `${fmt(start)} – ${fmt(end)} ${start.getUTCFullYear()}`,
+    source: 'historical',
+    reason: `Selected from the 2025 leaderboard — €${entry.margin_recovered.toLocaleString()} recoverable, ${entry.hours_recovered.toFixed(1)}h changeover saved.`,
   }
 }
 
@@ -267,6 +300,8 @@ function buildMockPlanResponse(products: PlanProduct[]): PlanOptimizeResponse {
   const optTotal = edges.filter(edge => edge.path === 'opt').reduce((sum, edge) => sum + edge.hours, 0)
   const baseTotal = edges.filter(edge => edge.path === 'baseline').reduce((sum, edge) => sum + edge.hours, 0)
 
+  const sequence = buildPlanSequence(byLine, edges)
+
   return {
     nodes,
     edges,
@@ -274,6 +309,76 @@ function buildMockPlanResponse(products: PlanProduct[]): PlanOptimizeResponse {
     h_saved: +(baseTotal - optTotal).toFixed(1),
     coverage_pct: 1.0,
     dropped_skus: [],
+    sequence,
+  }
+}
+
+// Synthesise a per-line Gantt schedule from the per-line product grouping.
+// Anchored at Mon 18 May 2026 06:00 so the labels match the existing Gantt
+// day ruler ('Mon 18'…'Sat 23'). Replace with the backend sequence once the
+// optimiser ships.
+const PLAN_WEEK_START = '2026-05-18T06:00:00'
+const PLAN_WEEK_END = '2026-05-24T22:00:00'
+const HOUR_MS = 3_600_000
+
+function buildPlanSequence(
+  byLine: Record<number, Array<{ sku_id: string; quantity_units: number; line_id: Line; family: string }>>,
+  edges: PlanGraphEdge[],
+): Sequence {
+  const optEdgeHours = new Map(
+    edges.filter(e => e.path === 'opt').map(e => [`${e.source}→${e.target}`, e.hours]),
+  )
+  const startMs = new Date(PLAN_WEEK_START).getTime()
+  const slots: Slot[] = []
+
+  ;([14, 17, 19] as Line[]).forEach(line => {
+    const items = byLine[line] ?? []
+    if (items.length === 0) return
+    let cursorMs = startMs
+
+    items.forEach((product, i) => {
+      const prodHours = Math.max(2, Math.min(18, product.quantity_units / 4000))
+      const prodEnd = cursorMs + prodHours * HOUR_MS
+      slots.push({
+        id: `plan-l${line}-p${i}`,
+        line,
+        start: new Date(cursorMs).toISOString(),
+        end: new Date(prodEnd).toISOString(),
+        kind: 'production',
+        sku: product.sku_id,
+        label: product.sku_id,
+        units: product.quantity_units,
+        oee_expected: +(0.78 + (i % 5) * 0.012).toFixed(3),
+      })
+      cursorMs = prodEnd
+
+      if (i < items.length - 1) {
+        const next = items[i + 1]
+        const changeoverH = optEdgeHours.get(`${product.sku_id}→${next.sku_id}`) ?? 0.5
+        const coEnd = cursorMs + changeoverH * HOUR_MS
+        slots.push({
+          id: `plan-l${line}-c${i}`,
+          line,
+          start: new Date(cursorMs).toISOString(),
+          end: new Date(coEnd).toISOString(),
+          kind: 'changeover',
+          sku: product.sku_id,
+          label: `→ ${next.family}`,
+          changeover_h: changeoverH,
+          changeover_source: 'ml',
+        })
+        cursorMs = coEnd
+      }
+    })
+  })
+
+  return {
+    id: 'plan-opt',
+    week_id: '2026-W20',
+    week_start: PLAN_WEEK_START,
+    week_end: PLAN_WEEK_END,
+    source: 'opt',
+    slots,
   }
 }
 

@@ -15,7 +15,7 @@
 // page mounts its own panel with its own seeds.
 
 import { useEffect, useRef, useState } from 'react'
-import { Send, Sparkles } from 'lucide-react'
+import { RotateCcw, Send, Sparkles } from 'lucide-react'
 import type {
   ChatMessage,
   ChatRequest,
@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { sendChatMessage, type DataSource } from '@/lib/linewise-api'
+import { useChatHistory } from '@/lib/hooks/use-chat-history'
 
 interface ChatPanelProps {
   solutionId: string
@@ -45,7 +46,11 @@ export function ChatPanel({
   subtitle = 'Grounded on the optimiser explanation pack',
   placeholder = 'Ask why a SKU went to this line, what drove a changeover, what changed vs last week…',
 }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>(seedMessages)
+  // Conversation lives in localStorage, keyed per-view, so users can refresh
+  // or navigate away and pick up where they left off. The seed messages are
+  // the initial state — once any real turn happens, that's what's persisted.
+  const historyKey = `linewise_chat_${scope.view ?? 'default'}`
+  const { messages, setMessages, clear } = useChatHistory(historyKey, seedMessages)
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
   const [lastSource, setLastSource] = useState<DataSource | null>(null)
@@ -103,20 +108,33 @@ export function ChatPanel({
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
           </div>
-          {scopeChips.length > 0 && (
-            <div className="flex flex-wrap gap-1 justify-end max-w-[60%]">
-              {lastSource && (
-                <Badge variant={lastSource === 'backend' ? 'default' : 'outline'} className="text-[10px]">
-                  {lastSource === 'backend' ? 'Backend' : 'Mock'}
-                </Badge>
-              )}
-              {scopeChips.map(chip => (
-                <Badge key={chip} variant="secondary" className="text-[10px] font-mono">
-                  {chip}
-                </Badge>
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {scopeChips.length > 0 && (
+              <div className="flex flex-wrap gap-1 justify-end max-w-[60%]">
+                {lastSource && (
+                  <Badge variant={lastSource === 'backend' ? 'default' : 'outline'} className="text-[10px]">
+                    {lastSource === 'backend' ? 'Backend' : 'Mock'}
+                  </Badge>
+                )}
+                {scopeChips.map(chip => (
+                  <Badge key={chip} variant="secondary" className="text-[10px] font-mono">
+                    {chip}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clear}
+              disabled={pending || messages.length <= seedMessages.length}
+              className="h-7 px-2 text-xs text-muted-foreground"
+              aria-label="Clear conversation"
+              title="Clear conversation"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">

@@ -31,8 +31,15 @@ const DAY_OPTIONS = [
   { value: '2026-05-22', label: 'Fri 22 May' },
 ]
 
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
+  value: hour,
+  label: `${String(hour).padStart(2, '0')}:00`,
+}))
+
 export function WhatIfForm() {
   const [scenarioId, setScenarioId] = useState<ScenarioId>('urgent-demand')
+  const [introductionDay, setIntroductionDay] = useState('2026-05-20')
+  const [introductionHour, setIntroductionHour] = useState(8)
   const [urgentSku,  setUrgentSku]  = useState('FREQ-2/5-25')
   const [urgentUnits, setUrgentUnits] = useState(8000)
   const [breakdownLine, setBreakdownLine] = useState<14 | 17 | 19>(14)
@@ -43,6 +50,7 @@ export function WhatIfForm() {
   const [resultSource, setResultSource]   = useState<DataSource | null>(null)
 
   const selectedSku = SKU_OPTIONS.find(s => s.sku === urgentSku)!
+  const introducedAt = `${introductionDay}T${String(introductionHour).padStart(2, '0')}:00:00`
 
   async function handleReplan() {
     setLoading(true)
@@ -51,6 +59,7 @@ export function WhatIfForm() {
 
     const response = await runReplan({
       scenario_id: scenarioId,
+      introduced_at: introducedAt,
       urgent_sku: urgentSku,
       urgent_units: urgentUnits,
       breakdown_line: breakdownLine,
@@ -94,8 +103,41 @@ export function WhatIfForm() {
       {/* ── Parameters ── */}
       <Card>
         <CardContent className="pt-5 pb-5">
+          <div className="space-y-4">
+            <p className="text-sm font-medium">When does the new information arrive?</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Weekday</label>
+                <select
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={introductionDay}
+                  onChange={e => setIntroductionDay(e.target.value)}
+                >
+                  {DAY_OPTIONS.map(d => (
+                    <option key={d.value} value={d.value}>{d.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Hour</label>
+                <select
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={introductionHour}
+                  onChange={e => setIntroductionHour(Number(e.target.value))}
+                >
+                  {HOUR_OPTIONS.map(h => (
+                    <option key={h.value} value={h.value}>{h.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The planner receives this what-if at {introducedAt.replace('T', ' ')} and only replans from that point onward.
+            </p>
+          </div>
+
           {scenarioId === 'urgent-demand' && (
-            <div className="space-y-4">
+            <div className="space-y-4 mt-5 pt-4 border-t">
               <p className="text-sm font-medium">Perturbation parameters</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -136,7 +178,7 @@ export function WhatIfForm() {
           )}
 
           {scenarioId === 'l14-breakdown' && (
-            <div className="space-y-4">
+            <div className="space-y-4 mt-5 pt-4 border-t">
               <p className="text-sm font-medium">Breakdown parameters</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>

@@ -12,8 +12,10 @@
 import { useMemo } from 'react'
 import {
   Background,
+  Controls,
   type Edge,
   MarkerType,
+  MiniMap,
   type Node,
   ReactFlow,
 } from '@xyflow/react'
@@ -41,20 +43,22 @@ function edgeColor(hours: number): string {
   return '#1D9E75'
 }
 
+// Fixed spacing so nodes never overlap, even with 50+ SKUs on one line.
+// The canvas grows as wide as it needs to — React Flow handles pan/zoom and
+// the minimap gives orientation when zoomed in.
+const NODE_SPACING_X = 140
+const LINE_Y: Record<number, number> = { 14: 60, 17: 200, 19: 340 }
+
 function computeLayout(nodes: PlanGraphNode[]): Map<string, { x: number; y: number }> {
   const byLine: Record<number, PlanGraphNode[]> = { 14: [], 17: [], 19: [] }
   nodes.forEach(n => byLine[n.line_id]?.push(n))
 
-  const lineY: Record<number, number> = { 14: 40, 17: 160, 19: 280 }
   const positions = new Map<string, { x: number; y: number }>()
-
   Object.entries(byLine).forEach(([line, lineNodes]) => {
-    if (lineNodes.length === 0) return
-    const spacing = Math.min(160, 640 / lineNodes.length)
     lineNodes.forEach((n, i) => {
       positions.set(n.id, {
-        x: 80 + i * spacing,
-        y: lineY[Number(line)] ?? 160,
+        x: 80 + i * NODE_SPACING_X,
+        y: LINE_Y[Number(line)] ?? 200,
       })
     })
   })
@@ -164,23 +168,38 @@ export function SequenceGraph({ nodes, edges, stats, title = 'Sequence graph' }:
           </p>
         </CardHeader>
         <CardContent className="p-0">
-          <div style={{ height: 380 }} className="bg-muted/10">
+          <div style={{ height: 520 }} className="bg-muted/10 relative">
             <ReactFlow
               nodes={rfNodes}
               edges={rfEdges}
               fitView
-              fitViewOptions={{ padding: 0.25 }}
+              fitViewOptions={{ padding: 0.2 }}
               proOptions={{ hideAttribution: true }}
               nodesDraggable={false}
               nodesConnectable={false}
               elementsSelectable={false}
               panOnDrag
               zoomOnScroll
-              minZoom={0.4}
+              minZoom={0.15}
               maxZoom={1.8}
             >
               <Background gap={20} size={1} />
+              <Controls showInteractive={false} className="shadow-sm! border!" />
+              <MiniMap
+                pannable
+                zoomable
+                nodeColor={(node) => {
+                  const family = nodes.find(n => n.id === node.id)?.family ?? ''
+                  return FAMILY_BG[family] ?? 'oklch(0.5 0.05 250)'
+                }}
+                maskColor="oklch(0.96 0 0 / 0.7)"
+                className="border! shadow-sm!"
+              />
             </ReactFlow>
+          </div>
+          <div className="px-4 py-2 border-t bg-muted/20 text-[10px] text-muted-foreground flex items-center justify-between flex-wrap gap-2">
+            <span>Drag to pan · scroll to zoom · use the minimap or controls bottom-left</span>
+            <span className="tabular-nums">L14 top · L17 middle · L19 bottom</span>
           </div>
         </CardContent>
       </Card>

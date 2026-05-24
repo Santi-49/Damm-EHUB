@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     first_admin_password: str = "changeme"
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # LineWise chat (LangChain + Anthropic). Leave empty to fall back to a
+    # canned reply so the demo still works without a key.
+    anthropic_api_key: str = ""
+    chat_model: str = "claude-sonnet-4-5"
+    chat_max_tokens: int = 600
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",")]

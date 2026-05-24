@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, roles, permissions, hello, linewise
+from app.api.v1.endpoints import auth, users, roles, permissions, hello, linewise, linewise_chat
 
 router = APIRouter(prefix="/api/v1")
 
@@ -10,3 +10,4 @@ router.include_router(roles.router)
 router.include_router(permissions.router)
 router.include_router(hello.router)
 router.include_router(linewise.router)
+router.include_router(linewise_chat.router)

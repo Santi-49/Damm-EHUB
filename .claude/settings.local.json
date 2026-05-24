@@ -9,7 +9,16 @@
       "mcp__fetch__fetch",
       "mcp__docker__run_command",
       "mcp__markitdown__convert_to_markdown",
-      "mcp__playwright__browser_navigate"
+      "mcp__playwright__browser_navigate",
+      "Bash(python3 .skills/design/ui-ux-pro-max/scripts/search.py \"industrial operations dashboard scheduling control-room light mode content-dense\" --design-system -p \"LineWise\")",
+      "Bash(npx tsc *)",
+      "Bash(python -c \"from packages.contracts.module import explainability, chat; from packages.contracts.module.explainability import ExplanationPack, ExplainerContract; from packages.contracts.module.chat import ChatContract, ChatRequest, ChatResponse, ChatScope; print\\('OK — contracts import cleanly'\\)\")",
+      "Bash(wc -l package-lock.json pnpm-lock.yaml)",
+      "Bash(stat -f \"%m %N\" package-lock.json pnpm-lock.yaml)",
+      "Bash(npm install *)",
+      "Bash(grep -E '^\\(textarea|scroll-area|badge\\)\\\\.tsx$')",
+      "Bash(npx next *)",
+      "Bash(grep -E '^\\(tabs|input|select|separator\\)\\\\.tsx$')"
     ]
   },
   "enabledMcpjsonServers": [

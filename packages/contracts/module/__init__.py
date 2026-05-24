@@ -11,11 +11,21 @@ Public surface:
 - ``changeover_ml`` — ``ChangeoverModelContract``
 - ``optimizer`` — ``GraphOptimizerContract``
 - ``simulator`` — ``SimulatorContract``
+- ``explainability`` — ``ExplainerContract`` + ``ExplanationPack`` (structured facts for chat)
+- ``chat`` — ``ChatContract`` (LLM-powered grounded chat over an ExplanationPack)
 
 See ``docs/architecture/linewise.md`` for the system-level diagram and
 ``docs/functionalities/overview.md`` for the workspace map.
 """
 
-from . import changeover_ml, etl, optimizer, schemas, simulator
+from . import changeover_ml, chat, etl, explainability, optimizer, schemas, simulator
 
-__all__ = ["schemas", "etl", "changeover_ml", "optimizer", "simulator"]
+__all__ = [
+    "schemas",
+    "etl",
+    "changeover_ml",
+    "optimizer",
+    "simulator",
+    "explainability",
+    "chat",
+]

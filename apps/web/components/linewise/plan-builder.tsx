@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SequenceGraph } from './sequence-graph'
+import { GanttChart } from './gantt-chart'
 import { ChatPanel } from './chat-panel'
 import { PLACEHOLDER_SOLUTION_ID, chatSeedPlan } from '@/lib/fixtures/chat-messages'
 import { optimizePlan, type DataSource } from '@/lib/linewise-api'
@@ -306,6 +307,11 @@ export function PlanBuilder() {
               coverage_pct: result.coverage_pct,
             }}
             title="Sequence graph — LineWise proposal"
+          />
+
+          <GanttChart
+            sequence={result.sequence}
+            title="Resulting schedule — LineWise proposal"
           />
 
           <ChatPanel

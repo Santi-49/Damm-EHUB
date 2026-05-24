@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -21,35 +22,35 @@ import {
   type DataSource,
   type WeekOption,
 } from '@/lib/linewise-api'
-import { ChangeoverTable } from './changeover-table'
 import { ChatPanel } from './chat-panel'
-import { DroppedSkuPanel } from './dropped-sku-panel'
-import { GanttChart } from './gantt-chart'
-import { OeeOverlay } from './oee-overlay'
+import { GANTT_DAY_OPTIONS, GanttChart, type GanttViewport } from './gantt-chart'
+import { LineScorecard } from './line-scorecard'
+import { TopTransitions } from './top-transitions'
 import type { DeltaMetrics, Sequence, SimulationReport } from '@/lib/types/linewise'
 
 export function CompareWorkspace() {
+  const searchParams = useSearchParams()
+  const initialWeekId = searchParams.get('week_id') ?? MOCK_WEEK_OPTIONS[0].id
   const [weeksResult, setWeeksResult] = useState<ApiResult<WeekOption[]>>({
     data: MOCK_WEEK_OPTIONS,
     source: 'mock',
   })
-  const [selectedWeekId, setSelectedWeekId] = useState(MOCK_WEEK_OPTIONS[0].id)
+  const [selectedWeekId, setSelectedWeekId] = useState(initialWeekId)
   const [compareResult, setCompareResult] = useState<ApiResult<CompareBundle> | null>(null)
+  const [ganttViewport, setGanttViewport] = useState<GanttViewport>('week')
   const [loading, setLoading] = useState(false)
   const weeks = weeksResult.data
   const selectedWeek = compareResult?.data.week ?? weeks.find(w => w.id === selectedWeekId) ?? MOCK_WEEK_OPTIONS[0]
+  const dropdownWeeks = weeks.some(w => w.id === selectedWeek.id) ? weeks : [selectedWeek, ...weeks]
 
   useEffect(() => {
     let active = true
     listWeeks().then(result => {
       if (!active) return
       setWeeksResult(result)
-      if (!result.data.some(week => week.id === selectedWeekId)) {
-        setSelectedWeekId(result.data[0]?.id ?? MOCK_WEEK_OPTIONS[0].id)
-      }
     })
     return () => { active = false }
-  }, [selectedWeekId])
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -67,7 +68,7 @@ export function CompareWorkspace() {
   return (
     <div className="flex flex-col gap-6">
       <CompareHeader
-        weeks={weeks}
+        weeks={dropdownWeeks}
         selectedWeek={selectedWeek}
         apiSource={compareResult?.source ?? weeksResult.source}
         loading={loading}
@@ -89,17 +90,14 @@ export function CompareWorkspace() {
           />
 
           <div className="flex flex-col gap-3">
-            <GanttChart sequence={bundle.real_sequence} title="S_real — what actually happened" />
-            <GanttChart sequence={bundle.opt_sequence} title="S_opt — LineWise proposal from backend" />
+            <GanttZoomControl value={ganttViewport} onChange={setGanttViewport} />
+            <GanttChart sequence={bundle.real_sequence} title="S_real — what actually happened" viewport={ganttViewport} />
+            <GanttChart sequence={bundle.opt_sequence} title="S_opt — LineWise proposal from backend" viewport={ganttViewport} />
           </div>
 
-          <OeeOverlay />
+          <LineScorecard real={bundle.real_simulation} opt={bundle.opt_simulation} />
 
-          {bundle.real_simulation.dropped_skus.length > 0 && (
-            <DroppedSkuPanel skus={bundle.real_simulation.dropped_skus} />
-          )}
-
-          <ChangeoverTable real={bundle.real_sequence} opt={bundle.opt_sequence} />
+          <TopTransitions real={bundle.real_sequence} opt={bundle.opt_sequence} />
 
           <ChatPanel
             solutionId={bundle.solution_id}
@@ -108,6 +106,38 @@ export function CompareWorkspace() {
           />
         </>
       )}
+    </div>
+  )
+}
+
+function GanttZoomControl({
+  value,
+  onChange,
+}: {
+  value: GanttViewport
+  onChange: (value: GanttViewport) => void
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="text-sm font-medium">Gantt zoom</p>
+        <p className="text-xs text-muted-foreground">
+          Switch to a day view to inspect each line hour by hour.
+        </p>
+      </div>
+      <Select value={value} onValueChange={value => onChange(value as GanttViewport)}>
+        <SelectTrigger className="w-full sm:w-44">
+          <SelectValue placeholder="Select zoom" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="week">Full week</SelectItem>
+          {GANTT_DAY_OPTIONS.map(day => (
+            <SelectItem key={day.value} value={day.value}>
+              {day.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   )
 }
@@ -233,8 +263,8 @@ function ImpactSummary({
     {
       icon: Euro,
       heading: `€${marginRecovered.toLocaleString()}`,
-      label: 'margin protected',
-      sub: `${real.dropped_skus.length} dropped SKU${real.dropped_skus.length === 1 ? '' : 's'} avoided`,
+      label: 'margin at risk — recovered',
+      sub: `${real.dropped_skus.length} SKU${real.dropped_skus.length === 1 ? '' : 's'} left unproduced in S_real`,
       tone: 'text-amber-700 bg-amber-50 border-amber-200',
     },
   ]
@@ -260,15 +290,42 @@ function ImpactSummary({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-3 pt-4 sm:grid-cols-2 xl:grid-cols-4">
-        {tiles.map(tile => (
-          <div key={tile.label} className={`rounded-xl border p-4 ${tile.tone}`}>
-            <tile.icon className="mb-3 h-5 w-5" />
-            <p className="text-2xl font-bold tabular-nums leading-none">{tile.heading}</p>
-            <p className="mt-1 text-sm font-semibold">{tile.label}</p>
-            <p className="mt-1 text-xs opacity-80">{tile.sub}</p>
+      <CardContent className="flex flex-col gap-4 pt-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {tiles.map(tile => (
+            <div key={tile.label} className={`rounded-xl border p-4 ${tile.tone}`}>
+              <tile.icon className="mb-3 h-5 w-5" />
+              <p className="text-2xl font-bold tabular-nums leading-none">{tile.heading}</p>
+              <p className="mt-1 text-sm font-semibold">{tile.label}</p>
+              <p className="mt-1 text-xs opacity-80">{tile.sub}</p>
+            </div>
+          ))}
+        </div>
+
+        {real.dropped_skus.length > 0 && (
+          <div className="border-t pt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+              S_real left unproduced — LineWise covers all demand
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {real.dropped_skus.map(d => (
+                <div
+                  key={d.sku}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50/50 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-mono font-semibold text-red-900">{d.sku}</p>
+                    <p className="text-[10px] text-red-700 mt-0.5 leading-relaxed">{d.reason}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold tabular-nums text-red-800">€{d.margin_lost.toLocaleString()}</p>
+                    <p className="text-[10px] text-red-600">{d.units_dropped.toLocaleString()} units</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
+        )}
       </CardContent>
     </Card>
   )

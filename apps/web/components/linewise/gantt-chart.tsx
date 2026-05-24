@@ -56,6 +56,15 @@ function formatTooltip(slot: Slot): { title: string; lines: string[] } {
 
 const DAY_LABELS = ['Mon 18', 'Tue 19', 'Wed 20', 'Thu 21', 'Fri 22', 'Sat 23']
 const TOTAL_HOURS = 6 * 24
+const DAY_HOURS = 24
+const HOUR_LABELS = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00']
+const HOUR_GRID_LINES = [4, 8, 12, 16, 20]
+
+export type GanttViewport = 'week' | `day-${number}`
+export const GANTT_DAY_OPTIONS = DAY_LABELS.map((label, index) => ({
+  value: `day-${index}` as GanttViewport,
+  label,
+}))
 
 const LEGEND = [
   { label: 'Production',  color: 'bg-[oklch(0.513_0.212_23.4)]' },
@@ -67,12 +76,21 @@ const LEGEND = [
 interface GanttChartProps {
   sequence: Sequence
   title?: string
+  viewport?: GanttViewport
 }
 
-export function GanttChart({ sequence, title }: GanttChartProps) {
+export function GanttChart({ sequence, title, viewport = 'week' }: GanttChartProps) {
   const [selected, setSelected] = useState<Slot | null>(null)
 
   const slotsForLine = (line: Line) => sequence.slots.filter(s => s.line === line)
+  const selectedDayIndex = viewport === 'week' ? null : Number(viewport.replace('day-', ''))
+  const visibleStart = selectedDayIndex == null ? 0 : selectedDayIndex * DAY_HOURS
+  const visibleHours = selectedDayIndex == null ? TOTAL_HOURS : DAY_HOURS
+  const visibleEnd = visibleStart + visibleHours
+  const rulerLabels = selectedDayIndex == null ? DAY_LABELS : HOUR_LABELS
+  const gridLines = selectedDayIndex == null
+    ? [1, 2, 3, 4, 5].map(d => d * DAY_HOURS)
+    : HOUR_GRID_LINES.map(hour => visibleStart + hour)
 
   return (
     <TooltipProvider delayDuration={120}>
@@ -87,7 +105,7 @@ export function GanttChart({ sequence, title }: GanttChartProps) {
 
         {/* Day ruler */}
         <div className="flex border-b bg-muted/10" style={{ paddingLeft: '3.5rem' }}>
-          {DAY_LABELS.map((label) => (
+          {rulerLabels.map((label) => (
             <div
               key={label}
               className="flex-1 text-center text-[10px] font-semibold text-muted-foreground/70 py-1.5 border-l first:border-l-0 border-border/30 tracking-wide"
@@ -101,29 +119,35 @@ export function GanttChart({ sequence, title }: GanttChartProps) {
         {LINES.map((line, lineIdx) => (
           <div
             key={line}
-            className={`flex items-stretch min-h-[3.5rem] ${lineIdx < LINES.length - 1 ? 'border-b border-border/60' : ''}`}
+            className={`flex items-stretch min-h-14 ${lineIdx < LINES.length - 1 ? 'border-b border-border/60' : ''}`}
           >
             {/* Line label */}
-            <div className="w-14 flex-shrink-0 flex items-center justify-center border-r border-border/60 bg-muted/10">
+            <div className="w-14 shrink-0 flex items-center justify-center border-r border-border/60 bg-muted/10">
               <span className="text-[11px] font-bold text-muted-foreground tracking-widest">L{line}</span>
             </div>
 
             {/* Slots track */}
             <div className="relative flex-1" style={{ height: '3.5rem' }}>
               {/* Day grid lines — very subtle */}
-              {[1, 2, 3, 4, 5].map(d => (
+              {gridLines.map(hour => (
                 <div
-                  key={d}
+                  key={hour}
                   className="absolute inset-y-0 border-l border-border/20"
-                  style={{ left: `${(d * 24 / TOTAL_HOURS) * 100}%` }}
+                  style={{ left: `${((hour - visibleStart) / visibleHours) * 100}%` }}
                 />
               ))}
 
               {slotsForLine(line).map(slot => {
-                const left  = parseHour(slot.start, sequence.week_start)
-                const width = parseHour(slot.end,   sequence.week_start) - left
-                const leftPct  = (left  / TOTAL_HOURS) * 100
-                const widthPct = (width / TOTAL_HOURS) * 100
+                const slotStart = parseHour(slot.start, sequence.week_start)
+                const slotEnd = parseHour(slot.end, sequence.week_start)
+                const clippedStart = Math.max(slotStart, visibleStart)
+                const clippedEnd = Math.min(slotEnd, visibleEnd)
+                if (clippedEnd <= visibleStart || clippedStart >= visibleEnd) return null
+
+                const left = clippedStart - visibleStart
+                const width = clippedEnd - clippedStart
+                const leftPct  = (left  / visibleHours) * 100
+                const widthPct = (width / visibleHours) * 100
                 const isNarrow = widthPct < 3.5
                 const styleClasses = getSlotStyle(slot)
                 const { title: tipTitle, lines: tipLines } = formatTooltip(slot)
