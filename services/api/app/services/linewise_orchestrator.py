@@ -969,6 +969,7 @@ def _urgent_to_sequence(
                     sku=_display_sku(graph, sku),
                     label=label,
                     units=_node_units(graph, sku),
+                    is_urgent=bool(graph.has_node(sku) and graph.nodes[sku].get("is_urgent")),
                 )
             )
             cursor = prod_end

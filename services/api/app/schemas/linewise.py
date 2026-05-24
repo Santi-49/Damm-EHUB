@@ -62,6 +62,7 @@ class Slot(BaseModel):
     changeover_h: Optional[float] = None
     changeover_source: Optional[ChangeoverSourceApi] = None
     changeover_drivers: Optional[list[ChangeoverDriver]] = None
+    is_urgent: Optional[bool] = None
 
 
 class Sequence(BaseModel):

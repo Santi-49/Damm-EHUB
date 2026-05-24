@@ -44,6 +44,8 @@ export interface Slot {
   changeover_source?: 'ml' | 'hibrido' | 'teorico'
   /** SHAP-style top features driving changeover time */
   changeover_drivers?: ChangeoverDriver[]
+  /** True when this production slot was injected by an urgent-demand replan. */
+  is_urgent?: boolean
 }
 
 export interface ChangeoverDriver {

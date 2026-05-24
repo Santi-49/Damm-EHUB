@@ -283,6 +283,9 @@ class TestReplan:
         assert isinstance(result, ReplanScenario)
         assert result.base_sequence.week_id == FAST_WEEK_ID
         assert result.sequence.week_id == FAST_WEEK_ID
+        urgent_slots = [slot for slot in result.sequence.slots if slot.is_urgent]
+        assert len(urgent_slots) == 1
+        assert urgent_slots[0].units == 1_000
 
 
 # ---------------------------------------------------------------------------

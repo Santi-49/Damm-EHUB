@@ -11,9 +11,14 @@ const DAY_HOURS = 24
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // Color map per slot kind / SKU family — all with white text
+const isUrgentSlot = (slot: Slot): boolean =>
+  slot.kind === 'production' && (
+    slot.is_urgent === true ||
+    slot.label?.toLowerCase().includes('urgent') === true
+  )
+
 const getSlotStyle = (slot: Slot): string => {
-  const isUrgent = slot.kind === 'production' && slot.label?.toLowerCase().includes('urgent')
-  if (isUrgent) return 'bg-blue-600 text-white ring-inset ring-1 ring-blue-300/70'
+  if (isUrgentSlot(slot)) return 'bg-blue-600 text-white ring-inset ring-1 ring-blue-300/70'
   if (slot.kind === 'changeover')  return 'bg-amber-400 text-amber-950 ring-inset ring-1 ring-amber-300/50'
   if (slot.kind === 'cleaning')    return 'bg-[oklch(0.55_0.1_240)] text-white ring-inset ring-1 ring-white/10'
   if (slot.kind === 'maintenance') return 'bg-emerald-500 text-white ring-inset ring-1 ring-emerald-200/60'
@@ -156,6 +161,7 @@ export function GanttChart({ sequence, title, viewport = 'week' }: GanttChartPro
                 const leftPct  = (left  / visibleHours) * 100
                 const widthPct = (width / visibleHours) * 100
                 const isNarrow = widthPct < 3.5
+                const isUrgent = isUrgentSlot(slot)
                 const styleClasses = getSlotStyle(slot)
                 const { title: tipTitle, lines: tipLines } = formatTooltip(slot)
 
@@ -172,7 +178,10 @@ export function GanttChart({ sequence, title, viewport = 'week' }: GanttChartPro
                         ].join(' ')}
                         style={{
                           left:  `calc(${leftPct}% + 1px)`,
-                          width: `calc(${widthPct}% - 2px)`,
+                          width: isUrgent
+                            ? `max(8px, calc(${widthPct}% - 2px))`
+                            : `calc(${widthPct}% - 2px)`,
+                          zIndex: isUrgent ? 10 : undefined,
                         }}
                         onClick={() => setSelected(slot)}
                         aria-label={`${tipTitle} — ${tipLines[0]}`}

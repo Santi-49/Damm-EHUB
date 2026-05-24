@@ -117,6 +117,7 @@ type Slot = {
   changeover_h?: number
   changeover_source?: 'ml' | 'hibrido' | 'teorico'
   changeover_drivers?: ChangeoverDriver[]
+  is_urgent?: boolean
 }
 
 type ChangeoverDriver = {

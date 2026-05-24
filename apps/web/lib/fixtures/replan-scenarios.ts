@@ -31,7 +31,7 @@ const seqReplanA: Sequence = {
     { id: 'l19r-A-s8', line: 19, start: '2026-05-22T02:30:00', end: '2026-05-22T05:00:00', kind: 'changeover', sku: 'RDSQ-1/3-33', label: '→ FreqFresh 2/5', changeover_h: 2.5, changeover_source: 'ml',
       changeover_drivers: [{ feature: 'format_change_1_3_to_2_5', impact_h: 1.9 }, { feature: 'brand_change', impact_h: 0.6 }] },
     // Second FREQ block — absorbs the extra 8 000 units of demand
-    { id: 'l19r-A-s9', line: 19, start: '2026-05-22T05:00:00', end: '2026-05-23T22:00:00', kind: 'production', sku: 'FREQ-2/5-25', label: 'FreqFresh 2/5 25cl (urgent)', units: 52000, oee_expected: 0.80 },
+    { id: 'l19r-A-s9', line: 19, start: '2026-05-22T05:00:00', end: '2026-05-23T22:00:00', kind: 'production', sku: 'FREQ-2/5-25', label: 'FreqFresh 2/5 25cl (urgent)', units: 52000, oee_expected: 0.80, is_urgent: true },
   ],
 }
 
