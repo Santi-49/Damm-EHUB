@@ -3,23 +3,24 @@
 Builds two complementary graph representations for a given planning window:
 
 1. ``build_planning_graph(window_id)``
-   Complete SKU-level graph used by the optimiser.
-   - One ``nx.DiGraph`` per line (L14 / L17 / L19).
-   - Node  = SKU that has demand AND can be produced on that line.
-   - Node cost  = ML-predicted productive hours for the weekly demand bucket
-                  (units_demanded / predicted_speed, via node_cost_ml).
-   - Edge weight = changeover hours from ``changeover_costs.csv``
-                   (Tabla CF Prat theoretical floor, per-line directed).
+   Complete SKU-level graph used by the optimiser — **single** ``nx.MultiDiGraph``
+   covering all three lines.
+   - Node  = SKU that has demand in the window AND is capable on at least one line.
+   - Node attribute ``line_data`` carries per-line ML node costs; only lines where
+     ``can_produce=True`` are present.
+   - Edge  = one directed edge per valid (sku_from, sku_to, line_id) triple.
+     Line ID is the MultiDiGraph edge key so costs are accessed as
+     ``G[sku_from][sku_to][line_id]``.
 
-2. ``build_historical_wo_graph(window_id, line_id)``
-   Actual path taken on a line during a historical week.
-   - Nodes = consecutive same-SKU runs of work orders (WOs collapsed).
-   - Node cost  = ML-predicted hours for the observed ``units_produced``.
-   - Edges = observed transitions with costs from ``wo_changeovers.csv``.
+2. ``build_historical_wo_graph(window_id)``
+   Actual paths taken on all three lines during a historical week — returns
+   ``dict[int, nx.DiGraph]`` (keys 14/17/19).  Each graph is a **strict linear
+   path**: only the run-nodes visited and only the sequential transition edges.
+   No isolated nodes, no unused edges.
 
 Visualisation helpers:
-   ``visualize_planning_graph(graphs)``   — Matplotlib figure, one subplot per line.
-   ``visualize_wo_graph(graph)``          — Timeline-style path for a historical graph.
+   ``visualize_planning_graph(graph)``   — 3-subplot figure, one line-view per subplot.
+   ``visualize_wo_graph(graphs)``        — 3-subplot timeline of the historical paths.
 """
 
 from __future__ import annotations
@@ -71,7 +72,6 @@ def _wo_changeovers() -> pd.DataFrame:
 
 
 def _window_dates(window_id: str, demand: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
-    """Return (window_start, window_end) for a given window_id."""
     row = demand[demand["window_id"] == window_id]
     if row.empty:
         raise ValueError(f"window_id {window_id!r} not found in demand.csv")
@@ -80,7 +80,27 @@ def _window_dates(window_id: str, demand: pd.DataFrame) -> tuple[pd.Timestamp, p
 
 
 # ---------------------------------------------------------------------------
-# 1. Planning graph
+# Internal: line-filtered DiGraph view (for visualisation)
+# ---------------------------------------------------------------------------
+
+def _line_view(G: nx.MultiDiGraph, line: int) -> nx.DiGraph:
+    """Return a plain DiGraph containing only the nodes and edges for *line*."""
+    view: nx.DiGraph = nx.DiGraph()
+    for node, attrs in G.nodes(data=True):
+        if line in attrs.get("line_data", {}):
+            view.add_node(
+                node,
+                predicted_hours=attrs["line_data"][line]["predicted_hours"],
+                units_demanded=attrs.get("units_demanded", 0),
+            )
+    for u, v, key, attrs in G.edges(keys=True, data=True):
+        if key == line and view.has_node(u) and view.has_node(v):
+            view.add_edge(u, v, **attrs)
+    return view
+
+
+# ---------------------------------------------------------------------------
+# 1. Planning graph — single MultiDiGraph across all three lines
 # ---------------------------------------------------------------------------
 
 def build_planning_graph(
@@ -90,14 +110,16 @@ def build_planning_graph(
     capability_df: pd.DataFrame | None = None,
     changeover_df: pd.DataFrame | None = None,
     ml_model: LoadedModel | None = None,
-) -> dict[int, nx.DiGraph]:
+) -> nx.MultiDiGraph:
     """Build the complete SKU-level planning graph for *window_id*.
 
-    Returns one ``nx.DiGraph`` per line (keys 14, 17, 19).  Node weights and
-    edge weights are **line-specific**: the ML speed model predicts a different
-    throughput for each (sku, line) pair, and the Tabla CF Prat matrix encodes
-    different changeover durations per line.  The VRP optimiser consumes each
-    graph independently — one vehicle (line) per graph.
+    Returns a **single** ``nx.MultiDiGraph`` covering all three lines.
+    Both node costs and edge costs are line-specific: the ML speed model
+    predicts a different throughput for each (sku, line) pair, and the
+    Tabla CF Prat matrix encodes different changeover durations per line.
+
+    The VRP optimiser queries per-line costs directly from the unified graph
+    instead of switching between three separate graph objects.
 
     Parameters
     ----------
@@ -113,31 +135,40 @@ def build_planning_graph(
 
     Returns
     -------
-    dict[int, nx.DiGraph]
-        Keys are line IDs (14, 17, 19).  Each graph contains only SKUs that
-        (a) have demand in *window_id* AND (b) are capable on that line
-        (``can_produce=True`` in ``line_capability.csv``).  A line with no
-        eligible SKUs gets an empty graph.
+    ``nx.MultiDiGraph`` with ``graph`` attribute ``window_id``.
+
+    A SKU appears as a node only if it has demand in *window_id* **and** is
+    capable (``can_produce=True``) on at least one line.  Self-loop edges
+    (same SKU → same SKU) are excluded.
 
     Node key
         ``sku_id`` string.
 
     Node attributes
     ~~~~~~~~~~~~~~~
-    ``sku_id``          str     SKU identifier (same as node key)
-    ``units_demanded``  int     weekly demand units for this SKU/window
-    ``predicted_hours`` float   ML node cost: units_demanded / predicted_speed
-                                on *this* line — differs across L14/L17/L19
-    ``source``          str     demand origin (historico_2025 / plan_2026 / whatif_usuario)
+    ``units_demanded``  int     weekly demand for this SKU in the window
+                                (same across lines — from demand.csv)
+    ``source``          str     demand origin
+                                (historico_2025 / plan_2026 / whatif_usuario)
     ``priority``        int     1–5; 5 = cannot be dropped by the optimiser
+    ``line_data``       dict    per-line node costs, keyed by line_id.
+                                Only lines where ``can_produce=True`` are present.
+                                ``line_data[14]["predicted_hours"]`` — ML node cost
+                                on L14 (units_demanded / predicted_speed_L14).
+                                ``line_data[17]["predicted_hours"]`` — same for L17.
+                                ``line_data[19]["predicted_hours"]`` — same for L19.
 
-    Edge attributes  (directed sku_from → sku_to, self-loops excluded)
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    ``hours``           float   total changeover hours on *this* line —
+    Edge key
+        ``line_id`` (int).  Access via ``G[sku_from][sku_to][line_id]``.
+
+    Edge attributes  (directed sku_from → sku_to, one edge per line)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ``line_id``         int     line this transition belongs to (14 / 17 / 19)
+    ``hours``           float   total changeover hours on this line —
                                 differs across L14/L17/L19
     ``dominant``        str     changeover segment that drives the cost
                                 (beer / container / cap_or_label / …)
-    ``co_source``       str     origin of the cost estimate
+    ``co_source``       str     origin of the estimate
                                 (tabla_cf_prat / empirico / ml)
     """
     demand = demand_df if demand_df is not None else _demand()
@@ -149,21 +180,16 @@ def build_planning_graph(
     if wnd.empty:
         raise ValueError(f"No demand rows for window_id={window_id!r}")
 
-    graphs: dict[int, nx.DiGraph] = {}
+    G: nx.MultiDiGraph = nx.MultiDiGraph(window_id=window_id)
 
+    # --- nodes: predict per-line costs, merge into line_data ---
     for line in LINE_IDS:
         cap_line = capability[(capability["line_id"] == line) & capability["can_produce"]]
         capable_skus = set(cap_line["sku_id"])
-
         nodes_df = wnd[wnd["sku_id"].isin(capable_skus)].copy()
-
-        G = nx.DiGraph(line_id=line, window_id=window_id)
-
         if nodes_df.empty:
-            graphs[line] = G
             continue
 
-        # Predict node cost: rename units_demanded → units_produced for the ML call
         inference_input = pd.DataFrame({
             "line_id": line,
             "sku_id": nodes_df["sku_id"].values,
@@ -173,130 +199,67 @@ def build_planning_graph(
         nodes_df = nodes_df.copy()
         nodes_df["predicted_hours"] = cost_rows["predicted_hours"].values
 
-        # Add nodes
         for _, row in nodes_df.iterrows():
-            G.add_node(
-                row["sku_id"],
-                sku_id=row["sku_id"],
-                units_demanded=int(row["units_demanded"]),
-                predicted_hours=float(row["predicted_hours"]),
-                source=str(row.get("source", "unknown")),
-                priority=int(row.get("priority", 3)),
-            )
+            sku = row["sku_id"]
+            if G.has_node(sku):
+                # Node already added by a previous line — just extend line_data
+                G.nodes[sku]["line_data"][line] = {
+                    "predicted_hours": float(row["predicted_hours"]),
+                }
+            else:
+                G.add_node(
+                    sku,
+                    units_demanded=int(row["units_demanded"]),
+                    source=str(row.get("source", "unknown")),
+                    priority=int(row.get("priority", 3)),
+                    line_data={
+                        line: {"predicted_hours": float(row["predicted_hours"])},
+                    },
+                )
 
-        # Add edges from the theoretical changeover matrix
-        sku_ids = set(G.nodes)
+    # --- edges: one per (sku_from, sku_to, line_id), keyed by line_id ---
+    all_skus = set(G.nodes)
+    for line in LINE_IDS:
         co_line = changeovers[changeovers["line_id"] == line]
         co_relevant = co_line[
-            co_line["sku_from_id"].isin(sku_ids) & co_line["sku_to_id"].isin(sku_ids)
+            co_line["sku_from_id"].isin(all_skus) & co_line["sku_to_id"].isin(all_skus)
         ]
         for _, row in co_relevant.iterrows():
             src, dst = row["sku_from_id"], row["sku_to_id"]
-            if src != dst:
+            if src == dst:
+                continue
+            # Only add edge if both endpoints are actually capable on this line
+            if (
+                line in G.nodes[src].get("line_data", {})
+                and line in G.nodes[dst].get("line_data", {})
+            ):
                 G.add_edge(
                     src,
                     dst,
+                    key=line,
+                    line_id=line,
                     hours=float(row["total_hours"]),
                     dominant=str(row.get("dominant_component", "")),
                     co_source=str(row.get("source", "tabla_cf_prat")),
                 )
 
-        graphs[line] = G
-
-    return graphs
+    return G
 
 
 # ---------------------------------------------------------------------------
-# 2. Historical WO graph
+# 2. Historical WO graphs — one linear path per line
 # ---------------------------------------------------------------------------
 
-def build_historical_wo_graph(
-    window_id: str,
+def _build_line_path(
     line_id: int,
-    *,
-    demand_df: pd.DataFrame | None = None,
-    wo_df: pd.DataFrame | None = None,
-    wo_co_df: pd.DataFrame | None = None,
-    ml_model: LoadedModel | None = None,
+    w_start: pd.Timestamp,
+    w_end: pd.Timestamp,
+    window_id: str,
+    wo: pd.DataFrame,
+    wo_co: pd.DataFrame,
+    lm: LoadedModel,
 ) -> nx.DiGraph:
-    """Build the historical execution graph for *line_id* in *window_id*.
-
-    Encodes the **actual production path taken**, not an optimiser proposal.
-    Used for post-mortem analysis and as a baseline to compare against the
-    optimiser output.
-
-    **Run collapsing** — consecutive WOs of the same SKU on the same line are
-    merged into a single *run* node.  This matches the granularity at which
-    the node-cost ML model was trained: one run = one (sku, line) chunk.  The
-    merge is order-safe because ``wo_master`` is sorted by
-    ``line_sequence_order`` (a deterministic position derived from
-    ``end_day, source_row_order, wo_id`` — there are no timestamps in the
-    historical exports).
-
-    **Window filtering** — WOs are included when ``end_day`` falls within
-    [``window_start``, ``window_end``] as declared in ``demand.csv`` for the
-    given *window_id*.  Only ``wo_kind == "production"`` rows are considered;
-    cleanings and maintenance WOs are excluded.
-
-    **Edge costs** — come from ``wo_changeovers.csv``.  These are **not**
-    observed changeover durations (the historical Damm exports contain no
-    start/end timestamps); they are the theoretical estimates joined from
-    ``changeover_costs.csv`` (Tabla CF Prat rules, ``source = tabla_cf_prat``).
-    The edge lookup key is ``wo_to_id`` — the first WO of the destination run.
-
-    Parameters
-    ----------
-    window_id:
-        Planning-window identifier, e.g. ``"2025-W01-7d"``.  Must exist in
-        ``demand.csv`` so the start/end dates can be resolved.
-    line_id:
-        One of 14, 17, 19.
-    demand_df, wo_df, wo_co_df:
-        Pre-loaded DataFrames.  Pass them when calling in a loop.
-    ml_model:
-        Pre-loaded :class:`~services.node_cost_ml.app.inference.LoadedModel`.
-
-    Returns
-    -------
-    ``nx.DiGraph`` with ``graph`` attributes ``line_id`` and ``window_id``.
-    Returns an empty graph when no production WOs fall in the window.
-
-    Node key
-        ``"<sku_id>_r<run_idx>"`` — unique even when the same SKU appears
-        multiple times on the line in one week.
-
-    Node attributes
-    ~~~~~~~~~~~~~~~
-    ``sku_id``          str         SKU produced during this run
-    ``wo_ids``          list[str]   WO IDs collapsed into this run (≥1)
-    ``units_produced``  int         sum of ``units_produced`` across the run's WOs
-    ``predicted_hours`` float       ML node cost: ``units_produced / predicted_speed``
-                                    on *this* line (``node_cost_ml`` inference)
-    ``actual_hours``    float       sum of ``productive_hours`` from ``wo_master``
-                                    (machine-running time only; excludes downtime)
-    ``run_order``       int         0-based position in the line's execution sequence
-
-    Edge attributes  (directed: run_i → run_{i+1}, path order)
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    ``hours``           float       theoretical changeover hours from
-                                    ``wo_changeovers.estimated_changeover_hours``
-                                    (sourced from Tabla CF Prat, not observed)
-    ``dominant``        str         changeover segment driving the max-rule total,
-                                    e.g. ``"secondary_pack"`` or ``"container"``
-    ``co_source``       str         ``"tabla_cf_prat"`` for all current rows;
-                                    ``"unknown"`` when the transition is absent
-                                    from ``wo_changeovers`` (edge still added)
-    ``transition_id``   str | None  ``wo_changeovers.transition_id`` (equals
-                                    ``wo_to_id`` of the destination WO)
-    """
-    demand = demand_df if demand_df is not None else _demand()
-    wo = wo_df if wo_df is not None else _wo_master()
-    wo_co = wo_co_df if wo_co_df is not None else _wo_changeovers()
-    lm = ml_model or load_artefacts()
-
-    w_start, w_end = _window_dates(window_id, demand)
-
-    # Filter WOs for this line and window
+    """Build the linear execution path for one line.  Internal helper."""
     line_wo = wo[
         (wo["line_id"] == line_id)
         & (wo["wo_kind"] == "production")
@@ -304,8 +267,9 @@ def build_historical_wo_graph(
         & (wo["end_day"] <= w_end)
     ].sort_values("line_sequence_order").copy()
 
+    G = nx.DiGraph(line_id=line_id, window_id=window_id)
     if line_wo.empty:
-        return nx.DiGraph(line_id=line_id, window_id=window_id)
+        return G
 
     # Collapse consecutive same-SKU WOs into runs
     sku_changed = (line_wo["sku_id"].shift() != line_wo["sku_id"]).astype(int)
@@ -323,18 +287,18 @@ def build_historical_wo_graph(
         .reset_index()
     )
 
-    # Predict node costs via ML
-    inference_input = pd.DataFrame({
-        "line_id": line_id,
-        "sku_id": runs["sku_id"].values,
-        "units_produced": runs["units_produced"].values,
-    })
-    cost_rows = predict_node_cost(inference_input, loaded=lm)
+    # Predict node costs
+    cost_rows = predict_node_cost(
+        pd.DataFrame({
+            "line_id": line_id,
+            "sku_id": runs["sku_id"].values,
+            "units_produced": runs["units_produced"].values,
+        }),
+        loaded=lm,
+    )
     runs["predicted_hours"] = cost_rows["predicted_hours"].values
 
-    G = nx.DiGraph(line_id=line_id, window_id=window_id)
-
-    # Add run nodes
+    # Add run nodes (all are on the path — no isolated nodes possible)
     node_keys: list[str] = []
     for i, row in runs.iterrows():
         key = f"{row['sku_id']}_r{int(row['_run_idx'])}"
@@ -349,27 +313,21 @@ def build_historical_wo_graph(
             run_order=int(i),
         )
 
-    # Build edge lookup from wo_changeovers
-    # Filter to this line and window
+    # Build changeover lookup: wo_to_id → row
     line_co = wo_co[
         (wo_co["line_id"] == line_id)
         & (wo_co["transition_day"] >= w_start)
         & (wo_co["transition_day"] <= w_end)
     ]
-    # Index: wo_to_id → transition row (one transition per WO arrival)
     co_by_wo_to: dict[str, pd.Series] = {
         row["wo_to_id"]: row for _, row in line_co.iterrows()
     }
 
-    # Add edges between consecutive runs
+    # Add only the sequential path edges
     for i in range(len(node_keys) - 1):
-        src_key = node_keys[i]
-        dst_key = node_keys[i + 1]
         dst_run = runs.iloc[i + 1]
-
-        # Look up changeover via the first WO of the destination run
-        first_wo_of_dst = dst_run["wo_ids"][0] if dst_run["wo_ids"] else None
-        co_row = co_by_wo_to.get(first_wo_of_dst)
+        first_wo = dst_run["wo_ids"][0] if dst_run["wo_ids"] else None
+        co_row = co_by_wo_to.get(first_wo)
 
         if co_row is not None:
             hours = float(co_row.get("estimated_changeover_hours", 0.0) or 0.0)
@@ -383,8 +341,8 @@ def build_historical_wo_graph(
             tid = None
 
         G.add_edge(
-            src_key,
-            dst_key,
+            node_keys[i],
+            node_keys[i + 1],
             hours=hours,
             dominant=dominant,
             co_source=co_source,
@@ -394,29 +352,123 @@ def build_historical_wo_graph(
     return G
 
 
+def build_historical_wo_graph(
+    window_id: str,
+    *,
+    demand_df: pd.DataFrame | None = None,
+    wo_df: pd.DataFrame | None = None,
+    wo_co_df: pd.DataFrame | None = None,
+    ml_model: LoadedModel | None = None,
+) -> dict[int, nx.DiGraph]:
+    """Build the historical execution graphs for all three lines in *window_id*.
+
+    Returns one ``nx.DiGraph`` per line (keys 14, 17, 19).  Each graph is a
+    **strict linear path** — only the run-nodes that were actually visited and
+    only the sequential transition edges between them.  There are no isolated
+    nodes and no edges that were not part of the executed sequence.
+
+    **Run collapsing** — consecutive WOs of the same SKU on the same line are
+    merged into a single *run* node.  This matches the granularity at which
+    the node-cost ML model was trained: one run = one (sku, line) chunk.  The
+    merge is order-safe because ``wo_master`` is sorted by
+    ``line_sequence_order`` (a deterministic position derived from
+    ``end_day, source_row_order, wo_id`` — there are no timestamps in the
+    historical exports).
+
+    **Window filtering** — WOs are included when ``end_day`` falls within
+    [``window_start``, ``window_end``] as declared in ``demand.csv`` for the
+    given *window_id*.  Only ``wo_kind == "production"`` rows are considered;
+    cleanings and maintenance WOs are excluded.
+
+    **Edge costs** — come from ``wo_changeovers.csv``.  These are **not**
+    observed changeover durations (the historical Damm exports contain no
+    start/end timestamps); they are the theoretical estimates joined from
+    ``changeover_costs.csv`` (Tabla CF Prat rules).  The lookup key is
+    ``wo_to_id`` — the first WO of the destination run.  When no matching row
+    is found in ``wo_changeovers``, the edge is still added with
+    ``co_source="unknown"`` and ``hours=0.0``.
+
+    Parameters
+    ----------
+    window_id:
+        Planning-window identifier, e.g. ``"2025-W01-7d"``.  Must exist in
+        ``demand.csv`` so start/end dates can be resolved.
+    demand_df, wo_df, wo_co_df:
+        Pre-loaded DataFrames.  Pass them when calling in a loop.
+    ml_model:
+        Pre-loaded :class:`~services.node_cost_ml.app.inference.LoadedModel`.
+
+    Returns
+    -------
+    ``dict[int, nx.DiGraph]`` — keys are 14, 17, 19.
+    Lines with no production WOs in the window return an empty graph.
+
+    Node key
+        ``"<sku_id>_r<run_idx>"`` — unique even when the same SKU recurs
+        on the line within one week.
+
+    Node attributes
+    ~~~~~~~~~~~~~~~
+    ``sku_id``          str         SKU produced during this run
+    ``wo_ids``          list[str]   WO IDs collapsed into this run (≥1)
+    ``units_produced``  int         sum of ``units_produced`` across the run's WOs
+    ``predicted_hours`` float       ML node cost: ``units_produced / predicted_speed``
+                                    on this line (``node_cost_ml`` inference)
+    ``actual_hours``    float       sum of ``productive_hours`` from ``wo_master``
+                                    (machine-running time only; excludes downtime)
+    ``run_order``       int         0-based position in the execution sequence
+
+    Edge attributes  (directed run_i → run_{i+1}, strictly sequential)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ``hours``           float       theoretical changeover hours from
+                                    ``wo_changeovers.estimated_changeover_hours``
+                                    (sourced from Tabla CF Prat, not observed)
+    ``dominant``        str         changeover segment driving the max-rule total,
+                                    e.g. ``"secondary_pack"`` or ``"container"``
+    ``co_source``       str         ``"tabla_cf_prat"`` for all current rows;
+                                    ``"unknown"`` when the transition is absent
+                                    from ``wo_changeovers``
+    ``transition_id``   str | None  ``wo_changeovers.transition_id`` (equals
+                                    ``wo_to_id`` of the destination WO)
+    """
+    demand = demand_df if demand_df is not None else _demand()
+    wo = wo_df if wo_df is not None else _wo_master()
+    wo_co = wo_co_df if wo_co_df is not None else _wo_changeovers()
+    lm = ml_model or load_artefacts()
+
+    w_start, w_end = _window_dates(window_id, demand)
+
+    return {
+        line: _build_line_path(line, w_start, w_end, window_id, wo, wo_co, lm)
+        for line in LINE_IDS
+    }
+
+
 # ---------------------------------------------------------------------------
-# 3. Visualise planning graph
+# 3. Visualise planning graph (single MultiDiGraph, three line-view subplots)
 # ---------------------------------------------------------------------------
 
 def visualize_planning_graph(
-    graphs: dict[int, nx.DiGraph],
+    graph: nx.MultiDiGraph,
     *,
     figsize: tuple[float, float] = (22, 7),
     max_edge_hours: float | None = None,
 ) -> plt.Figure:
-    """Visualise the planning graphs (one subplot per line).
+    """Visualise the planning graph as three line-view subplots.
 
-    Node size ∝ predicted_hours (node cost).
-    Edge colour encodes changeover hours (blue = cheap, red = expensive).
+    Each subplot shows the nodes and edges that are active on that specific
+    line (filtered from the unified MultiDiGraph).  Node size is proportional
+    to the ML-predicted hours for that line.  Edge colour encodes changeover
+    hours (green = cheap, red = expensive) on a shared scale.
 
     Parameters
     ----------
-    graphs:
+    graph:
         Output of :func:`build_planning_graph`.
     figsize:
         Matplotlib figure size in inches.
     max_edge_hours:
-        Clip edge colours at this upper bound. Auto-detected if ``None``.
+        Upper bound for the colour scale.  Auto-detected if ``None``.
 
     Returns
     -------
@@ -424,43 +476,34 @@ def visualize_planning_graph(
     """
     cmap = plt.colormaps["RdYlGn_r"]
 
-    # Global max for consistent colour scale across lines
     if max_edge_hours is None:
-        all_hours = [
-            d["hours"]
-            for G in graphs.values()
-            for _, _, d in G.edges(data=True)
-        ]
+        all_hours = [d["hours"] for _, _, _, d in graph.edges(keys=True, data=True)]
         max_edge_hours = max(all_hours) if all_hours else 1.0
 
     norm = mcolors.Normalize(vmin=0, vmax=max_edge_hours)
+    window_id = graph.graph.get("window_id", "")
 
     fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
-    window_id = next(iter(graphs.values())).graph.get("window_id", "")
-    fig.suptitle(
-        f"Planning graph — {window_id}",
-        fontsize=14,
-        fontweight="bold",
-    )
+    fig.suptitle(f"Planning graph — {window_id}", fontsize=14, fontweight="bold")
 
     for ax, line in zip(axes, LINE_IDS):
-        G = graphs.get(line, nx.DiGraph())
-        ax.set_title(f"L{line}  ({G.number_of_nodes()} SKUs, {G.number_of_edges()} transitions)")
+        G = _line_view(graph, line)
+        n, e = G.number_of_nodes(), G.number_of_edges()
+        ax.set_title(f"L{line}  ({n} SKUs, {e} transitions)")
 
-        if G.number_of_nodes() == 0:
-            ax.text(0.5, 0.5, "No capable SKUs", ha="center", va="center", transform=ax.transAxes)
+        if n == 0:
+            ax.text(0.5, 0.5, "No capable SKUs", ha="center", va="center",
+                    transform=ax.transAxes)
             ax.axis("off")
             continue
 
         pos = nx.circular_layout(G)
 
-        # Node sizes and labels
-        node_hours = [G.nodes[n].get("predicted_hours", 1.0) for n in G.nodes]
+        node_hours = [G.nodes[nd].get("predicted_hours", 1.0) for nd in G.nodes]
         max_h = max(node_hours) if node_hours else 1.0
         node_sizes = [300 + 1500 * (h / max_h) for h in node_hours]
-        labels = {n: n[:8] for n in G.nodes}  # truncate long SKU IDs
+        labels = {nd: nd[:8] for nd in G.nodes}
 
-        # Edge colours
         edges = list(G.edges(data=True))
         edge_colors = [cmap(norm(d.get("hours", 0.0))) for _, _, d in edges]
         edge_widths = [0.5 + 2.0 * (d.get("hours", 0.0) / max_edge_hours) for _, _, d in edges]
@@ -468,18 +511,11 @@ def visualize_planning_graph(
         nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color="#4C9BE8",
                                alpha=0.85, ax=ax)
         nx.draw_networkx_labels(G, pos, labels=labels, font_size=5, ax=ax)
-        nx.draw_networkx_edges(
-            G, pos,
-            edge_color=edge_colors,
-            width=edge_widths,
-            arrows=True,
-            arrowsize=8,
-            connectionstyle="arc3,rad=0.1",
-            ax=ax,
-        )
+        nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=edge_widths,
+                               arrows=True, arrowsize=8,
+                               connectionstyle="arc3,rad=0.1", ax=ax)
         ax.axis("off")
 
-    # Colour bar
     sm = cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=axes, orientation="vertical", fraction=0.02, pad=0.04)
@@ -489,110 +525,93 @@ def visualize_planning_graph(
 
 
 # ---------------------------------------------------------------------------
-# 4. Visualise historical WO graph (path taken)
+# 4. Visualise historical WO graphs (dict of linear paths, three subplots)
 # ---------------------------------------------------------------------------
 
 def visualize_wo_graph(
-    graph: nx.DiGraph,
+    graphs: dict[int, nx.DiGraph],
     *,
-    figsize: tuple[float, float] = (16, 5),
+    figsize: tuple[float, float] = (22, 6),
 ) -> plt.Figure:
-    """Visualise the actual production path for one line in one week.
+    """Visualise the historical execution paths for all three lines.
 
-    Nodes are arranged left → right in execution order.
-    Node colour encodes predicted vs actual hours ratio (green = match, red = over-predict).
-    Edge label shows changeover hours.
+    Each subplot shows the linear run-sequence for one line.  Nodes are laid
+    out left-to-right in execution order.  Node colour encodes the
+    predicted/actual hours ratio (green = ML matches reality, red = large
+    over-prediction).  Edge labels show changeover hours and the dominant
+    component.
 
     Parameters
     ----------
-    graph:
+    graphs:
         Output of :func:`build_historical_wo_graph`.
 
     Returns
     -------
     ``matplotlib.figure.Figure``.
     """
-    G = graph
-    line_id = G.graph.get("line_id", "?")
-    window_id = G.graph.get("window_id", "?")
-
-    fig, ax = plt.subplots(figsize=figsize)
-    ax.set_title(
-        f"Historical execution path — L{line_id}  {window_id}",
-        fontsize=13,
-        fontweight="bold",
+    window_id = next(
+        (G.graph.get("window_id", "") for G in graphs.values()), ""
     )
 
-    if G.number_of_nodes() == 0:
-        ax.text(0.5, 0.5, "No production runs in this window",
-                ha="center", va="center", transform=ax.transAxes, fontsize=12)
+    fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+    fig.suptitle(f"Historical execution paths — {window_id}", fontsize=14, fontweight="bold")
+
+    for ax, line in zip(axes, LINE_IDS):
+        G = graphs.get(line, nx.DiGraph())
+        n = G.number_of_nodes()
+        ax.set_title(f"L{line}  ({n} runs)")
+
+        if n == 0:
+            ax.text(0.5, 0.5, "No production runs", ha="center", va="center",
+                    transform=ax.transAxes)
+            ax.axis("off")
+            continue
+
+        ordered = sorted(G.nodes, key=lambda nd: G.nodes[nd].get("run_order", 0))
+        pos = {nd: (i, 0.0) for i, nd in enumerate(ordered)}
+
+        def _ratio_color(nd: str) -> str:
+            pred = G.nodes[nd].get("predicted_hours", 0.0)
+            actual = G.nodes[nd].get("actual_hours", 0.0)
+            if actual <= 0:
+                return "#AAAAAA"
+            ratio_clamped = min(pred / actual, 2.0) / 2.0
+            r = int(255 * ratio_clamped)
+            g_ch = int(255 * (1 - ratio_clamped))
+            return f"#{r:02X}{g_ch:02X}50"
+
+        node_colors = [_ratio_color(nd) for nd in ordered]
+        units = [G.nodes[nd].get("units_produced", 1) for nd in ordered]
+        max_u = max(units) if units else 1
+        node_sizes = [500 + 2000 * (u / max_u) for u in units]
+        labels = {
+            nd: f"{G.nodes[nd]['sku_id']}\n{G.nodes[nd].get('predicted_hours', 0):.1f}h"
+            for nd in ordered
+        }
+
+        nx.draw_networkx_nodes(G, pos, nodelist=ordered, node_size=node_sizes,
+                               node_color=node_colors, alpha=0.9, ax=ax)
+        nx.draw_networkx_labels(G, pos, labels=labels, font_size=6, ax=ax)
+        nx.draw_networkx_edges(G, pos, arrows=True, arrowsize=12,
+                               edge_color="#555555", width=2, ax=ax)
+
+        edge_labels = {
+            (u, v): f"{d.get('hours', 0.0):.1f}h\n{d.get('dominant', '')}"
+            for u, v, d in G.edges(data=True)
+        }
+        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels,
+                                     font_size=5, label_pos=0.3, ax=ax)
+
+        total_co = sum(d.get("hours", 0.0) for _, _, d in G.edges(data=True))
+        total_pred = sum(G.nodes[nd].get("predicted_hours", 0.0) for nd in G.nodes)
+        total_actual = sum(G.nodes[nd].get("actual_hours", 0.0) for nd in G.nodes)
+        ax.set_xlabel(
+            f"CO: {total_co:.1f}h  |  pred: {total_pred:.1f}h  |  actual: {total_actual:.1f}h",
+            fontsize=7,
+        )
         ax.axis("off")
-        return fig
 
-    # Layout: nodes in execution order along x-axis
-    ordered_nodes = sorted(G.nodes, key=lambda n: G.nodes[n].get("run_order", 0))
-    pos = {node: (i, 0.0) for i, node in enumerate(ordered_nodes)}
-
-    # Node colour: predicted / actual hours ratio (capped)
-    def _ratio_color(node: str) -> str:
-        pred = G.nodes[node].get("predicted_hours", 0.0)
-        actual = G.nodes[node].get("actual_hours", 0.0)
-        if actual <= 0:
-            return "#AAAAAA"
-        ratio = pred / actual
-        # Green < 1 (under-predict), Red > 1.5 (large over-predict)
-        ratio_clamped = min(ratio, 2.0) / 2.0
-        r = int(255 * ratio_clamped)
-        g = int(255 * (1 - ratio_clamped))
-        return f"#{r:02X}{g:02X}50"
-
-    node_colors = [_ratio_color(n) for n in ordered_nodes]
-
-    # Node sizes ∝ units_produced
-    units = [G.nodes[n].get("units_produced", 1) for n in ordered_nodes]
-    max_u = max(units) if units else 1
-    node_sizes = [600 + 2400 * (u / max_u) for u in units]
-
-    # Labels: SKU id + predicted hours
-    labels = {
-        n: f"{G.nodes[n]['sku_id']}\n{G.nodes[n].get('predicted_hours', 0):.1f}h"
-        for n in ordered_nodes
-    }
-
-    nx.draw_networkx_nodes(G, pos, nodelist=ordered_nodes, node_size=node_sizes,
-                           node_color=node_colors, alpha=0.9, ax=ax)
-    nx.draw_networkx_labels(G, pos, labels=labels, font_size=7, ax=ax)
-
-    # Edges with changeover hour labels
-    edge_labels = {
-        (u, v): f"{d.get('hours', 0.0):.1f}h\n{d.get('dominant', '')}"
-        for u, v, d in G.edges(data=True)
-    }
-    nx.draw_networkx_edges(G, pos, arrows=True, arrowsize=15,
-                           edge_color="#555555", width=2, ax=ax)
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels,
-                                 font_size=6, label_pos=0.3, ax=ax)
-
-    # Legend / info box
-    n_nodes = G.number_of_nodes()
-    total_co = sum(d.get("hours", 0.0) for _, _, d in G.edges(data=True))
-    total_pred = sum(G.nodes[n].get("predicted_hours", 0.0) for n in G.nodes)
-    total_actual = sum(G.nodes[n].get("actual_hours", 0.0) for n in G.nodes)
-    info = (
-        f"Runs: {n_nodes}  |  "
-        f"Total changeover: {total_co:.1f}h  |  "
-        f"Predicted prod: {total_pred:.1f}h  |  "
-        f"Actual prod: {total_actual:.1f}h"
-    )
-    ax.set_xlabel(info, fontsize=9)
-    ax.axis("off")
-
-    # Colour legend for node ratio
-    for label, color in [("pred ≈ actual", "#00FF50"), ("pred > actual", "#FF0050")]:
-        ax.scatter([], [], c=color, s=80, label=label, alpha=0.85)
-    ax.legend(loc="upper right", fontsize=8, framealpha=0.7)
-
-    fig.tight_layout()
     return fig
 
 
@@ -601,29 +620,41 @@ def visualize_wo_graph(
 # ---------------------------------------------------------------------------
 
 def _smoke_test() -> None:
-    print("Loading demand to pick a valid window_id …")
     demand = _demand()
     window_id = demand["window_id"].iloc[0]
-    print(f"  using window_id: {window_id}")
+    print(f"window_id: {window_id}")
 
-    print("\nBuilding planning graph ...")
-    graphs = build_planning_graph(window_id, demand_df=demand)
-    for line, G in graphs.items():
-        print(f"  L{line}: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+    print("\nbuild_planning_graph ...")
+    G = build_planning_graph(window_id, demand_df=demand)
+    print(f"  nodes: {G.number_of_nodes()}")
+    print(f"  edges (total across all lines): {G.number_of_edges()}")
+    for line in LINE_IDS:
+        view = _line_view(G, line)
+        print(f"  L{line}: {view.number_of_nodes()} nodes, {view.number_of_edges()} edges")
 
-    print("\nVisualising planning graph ...")
-    fig = visualize_planning_graph(graphs)
+    # Show per-line node cost difference for the first shared SKU
+    shared = [
+        n for n in G.nodes
+        if len(G.nodes[n].get("line_data", {})) > 1
+    ]
+    if shared:
+        sku = shared[0]
+        print(f"\n  Node cost for {sku}:")
+        for ln, ld in G.nodes[sku]["line_data"].items():
+            print(f"    L{ln}: {ld['predicted_hours']:.2f}h")
+
+    fig = visualize_planning_graph(G)
     fig.savefig("planning_graph.png", dpi=120, bbox_inches="tight")
-    print("  saved: planning_graph.png")
+    print("\n  saved: planning_graph.png")
 
-    print("\nBuilding historical WO graph for L14 ...")
-    wo_graph = build_historical_wo_graph(window_id, line_id=14, demand_df=demand)
-    print(f"  L14 runs: {wo_graph.number_of_nodes()}, transitions: {wo_graph.number_of_edges()}")
+    print("\nbuild_historical_wo_graph ...")
+    wo_graphs = build_historical_wo_graph(window_id, demand_df=demand)
+    for line, path in wo_graphs.items():
+        print(f"  L{line}: {path.number_of_nodes()} runs, {path.number_of_edges()} transitions")
 
-    print("\nVisualising WO graph ...")
-    fig2 = visualize_wo_graph(wo_graph)
+    fig2 = visualize_wo_graph(wo_graphs)
     fig2.savefig("wo_path_graph.png", dpi=120, bbox_inches="tight")
-    print("  saved: wo_path_graph.png")
+    print("\n  saved: wo_path_graph.png")
 
 
 if __name__ == "__main__":
