@@ -26,7 +26,7 @@ const KIND_BADGE: Record<string, string> = {
   production:  'bg-primary/10 text-primary border-primary/20',
   changeover:  'bg-amber-100 text-amber-800 border-amber-200',
   cleaning:    'bg-blue-100 text-blue-800 border-blue-200',
-  maintenance: 'bg-slate-100 text-slate-700 border-slate-200',
+  maintenance: 'bg-emerald-100 text-emerald-800 border-emerald-200',
 }
 
 export function SlotDrawer({ slot, onClose }: SlotDrawerProps) {

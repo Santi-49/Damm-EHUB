@@ -517,6 +517,7 @@ class LinewiseOrchestrator:
                 f"(baseline {wif.original_makespan_hours:.1f}h)."
             ),
             recommendation=recommendation,
+            base_sequence=base_seq,
             sequence=replan_seq,
             report=replan_report,
             base=base_report,
@@ -640,6 +641,7 @@ class LinewiseOrchestrator:
                 f"to {urgent.urgent_end_hours:.1f}."
             ),
             recommendation=recommendation,
+            base_sequence=base_seq,
             sequence=replan_seq,
             report=replan_report,
             base=base_report,

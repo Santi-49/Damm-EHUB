@@ -196,6 +196,7 @@ class ReplanScenario(BaseModel):
     label: str
     description: str
     recommendation: ReplanRecommendation
+    base_sequence: Sequence
     sequence: Sequence
     report: SimulationReport
     base: SimulationReport

@@ -273,6 +273,7 @@ type ReplanScenario = {
     why: string
     constraints: string[]
   }
+  base_sequence: Sequence
   sequence: Sequence
   report: SimulationReport
   base: SimulationReport

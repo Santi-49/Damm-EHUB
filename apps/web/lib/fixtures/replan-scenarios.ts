@@ -31,7 +31,7 @@ const seqReplanA: Sequence = {
     { id: 'l19r-A-s8', line: 19, start: '2026-05-22T02:30:00', end: '2026-05-22T05:00:00', kind: 'changeover', sku: 'RDSQ-1/3-33', label: '→ FreqFresh 2/5', changeover_h: 2.5, changeover_source: 'ml',
       changeover_drivers: [{ feature: 'format_change_1_3_to_2_5', impact_h: 1.9 }, { feature: 'brand_change', impact_h: 0.6 }] },
     // Second FREQ block — absorbs the extra 8 000 units of demand
-    { id: 'l19r-A-s9', line: 19, start: '2026-05-22T05:00:00', end: '2026-05-23T22:00:00', kind: 'production', sku: 'FREQ-2/5-25', label: 'FreqFresh 2/5 25cl (extended)', units: 52000, oee_expected: 0.80 },
+    { id: 'l19r-A-s9', line: 19, start: '2026-05-22T05:00:00', end: '2026-05-23T22:00:00', kind: 'production', sku: 'FREQ-2/5-25', label: 'FreqFresh 2/5 25cl (urgent)', units: 52000, oee_expected: 0.80 },
   ],
 }
 
@@ -132,10 +132,12 @@ export interface ReplanScenario {
   description:    string
   recommendation: {
     assignedLine?: 14 | 17 | 19
+    assigned_line?: 14 | 17 | 19
     headline:      string
     why:           string
     constraints:   string[]
   }
+  base_sequence: Sequence
   sequence: Sequence
   report:   SimulationReport
   base:     SimulationReport
@@ -156,6 +158,7 @@ export const replanScenarios: ReplanScenario[] = [
         'L19 → 1/2, 1/3, 2/5 ✓ assigned',
       ],
     },
+    base_sequence: sequenceOpt,
     sequence: seqReplanA,
     report:   simReplanA,
     base:     simulationOpt,
@@ -174,6 +177,7 @@ export const replanScenarios: ReplanScenario[] = [
         'L19 → 1/2 format ✓ absorbs overflow',
       ],
     },
+    base_sequence: sequenceOpt,
     sequence: seqReplanB,
     report:   simReplanB,
     base:     simulationOpt,

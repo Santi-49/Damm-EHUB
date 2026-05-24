@@ -6,12 +6,17 @@ import { SlotDrawer } from './slot-drawer'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const LINES: Line[] = [14, 17, 19]
+const WEEK_HOURS = 7 * 24
+const DAY_HOURS = 24
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // Color map per slot kind / SKU family — all with white text
 const getSlotStyle = (slot: Slot): string => {
+  const isUrgent = slot.kind === 'production' && slot.label?.toLowerCase().includes('urgent')
+  if (isUrgent) return 'bg-blue-600 text-white ring-inset ring-1 ring-blue-300/70'
   if (slot.kind === 'changeover')  return 'bg-amber-400 text-amber-950 ring-inset ring-1 ring-amber-300/50'
   if (slot.kind === 'cleaning')    return 'bg-[oklch(0.55_0.1_240)] text-white ring-inset ring-1 ring-white/10'
-  if (slot.kind === 'maintenance') return 'bg-[oklch(0.45_0.04_250)] text-white ring-inset ring-1 ring-white/10'
+  if (slot.kind === 'maintenance') return 'bg-emerald-500 text-white ring-inset ring-1 ring-emerald-200/60'
 
   // production — colour by SKU family
   const prefix = slot.sku?.split('-')[0] ?? ''
@@ -27,12 +32,16 @@ const getSlotStyle = (slot: Slot): string => {
   return map[prefix] ?? 'bg-primary text-white ring-inset ring-1 ring-white/10'
 }
 
+function dateLikeToTime(value: string): number {
+  return new Date(value.includes('T') ? value : `${value}T00:00:00`).getTime()
+}
+
 function parseHour(iso: string, weekStart: string): number {
-  return (new Date(iso).getTime() - new Date(weekStart).getTime()) / (1000 * 60 * 60)
+  return (dateLikeToTime(iso) - dateLikeToTime(weekStart)) / (1000 * 60 * 60)
 }
 
 function formatDuration(start: string, end: string): string {
-  const h = (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60 * 60)
+  const h = (dateLikeToTime(end) - dateLikeToTime(start)) / (1000 * 60 * 60)
   return h >= 1 ? `${h.toFixed(1)} h` : `${Math.round(h * 60)} min`
 }
 
@@ -54,23 +63,21 @@ function formatTooltip(slot: Slot): { title: string; lines: string[] } {
   return { title: slot.label ?? slot.kind, lines: [`Duration: ${duration}`] }
 }
 
-const DAY_LABELS = ['Mon 18', 'Tue 19', 'Wed 20', 'Thu 21', 'Fri 22', 'Sat 23']
-const TOTAL_HOURS = 6 * 24
-const DAY_HOURS = 24
 const HOUR_LABELS = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00']
 const HOUR_GRID_LINES = [4, 8, 12, 16, 20]
 
 export type GanttViewport = 'week' | `day-${number}`
-export const GANTT_DAY_OPTIONS = DAY_LABELS.map((label, index) => ({
+export const GANTT_DAY_OPTIONS = WEEKDAY_LABELS.map((label, index) => ({
   value: `day-${index}` as GanttViewport,
   label,
 }))
 
 const LEGEND = [
   { label: 'Production',  color: 'bg-[oklch(0.513_0.212_23.4)]' },
+  { label: 'Urgent demand', color: 'bg-blue-600' },
   { label: 'Changeover',  color: 'bg-amber-400' },
   { label: 'Cleaning',    color: 'bg-[oklch(0.55_0.1_240)]' },
-  { label: 'Maintenance', color: 'bg-[oklch(0.45_0.04_250)]' },
+  { label: 'Maintenance', color: 'bg-emerald-500' },
 ]
 
 interface GanttChartProps {
@@ -85,11 +92,11 @@ export function GanttChart({ sequence, title, viewport = 'week' }: GanttChartPro
   const slotsForLine = (line: Line) => sequence.slots.filter(s => s.line === line)
   const selectedDayIndex = viewport === 'week' ? null : Number(viewport.replace('day-', ''))
   const visibleStart = selectedDayIndex == null ? 0 : selectedDayIndex * DAY_HOURS
-  const visibleHours = selectedDayIndex == null ? TOTAL_HOURS : DAY_HOURS
+  const visibleHours = selectedDayIndex == null ? WEEK_HOURS : DAY_HOURS
   const visibleEnd = visibleStart + visibleHours
-  const rulerLabels = selectedDayIndex == null ? DAY_LABELS : HOUR_LABELS
+  const rulerLabels = selectedDayIndex == null ? buildWeekLabels(sequence.week_start) : HOUR_LABELS
   const gridLines = selectedDayIndex == null
-    ? [1, 2, 3, 4, 5].map(d => d * DAY_HOURS)
+    ? [1, 2, 3, 4, 5, 6].map(d => d * DAY_HOURS)
     : HOUR_GRID_LINES.map(hour => visibleStart + hour)
 
   return (
@@ -206,4 +213,14 @@ export function GanttChart({ sequence, title, viewport = 'week' }: GanttChartPro
       <SlotDrawer slot={selected} onClose={() => setSelected(null)} />
     </TooltipProvider>
   )
+}
+
+function buildWeekLabels(weekStart: string): string[] {
+  const start = new Date(dateLikeToTime(weekStart))
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(start)
+    day.setDate(start.getDate() + index)
+    const weekday = WEEKDAY_LABELS[index] ?? ''
+    return `${weekday} ${day.getDate()}`
+  })
 }

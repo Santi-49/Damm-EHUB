@@ -19,6 +19,7 @@ function delta(base: SimulationReport, replan: SimulationReport) {
 export function RecommendationCard({ scenario }: RecommendationCardProps) {
   const { recommendation: rec, report, base } = scenario
   const d = delta(base, report)
+  const assignedLine = rec.assignedLine ?? rec.assigned_line
 
   const impactTiles = [
     {
@@ -56,8 +57,8 @@ export function RecommendationCard({ scenario }: RecommendationCardProps) {
             LineWise Recommendation
           </p>
           <p className="text-lg font-bold leading-snug">{rec.headline}</p>
-          {rec.assignedLine && (
-            <Badge className="mt-1.5 bg-primary text-white text-xs">L{rec.assignedLine} assigned</Badge>
+          {assignedLine && (
+            <Badge className="mt-1.5 bg-primary text-white text-xs">L{assignedLine} assigned</Badge>
           )}
         </div>
       </div>

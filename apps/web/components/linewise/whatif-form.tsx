@@ -18,17 +18,17 @@ const SCENARIO_ICONS = {
 type ScenarioId = keyof typeof SCENARIO_ICONS
 
 const SKU_OPTIONS = [
-  { sku: 'FREQ-2/5-25', label: 'FreqFresh 2/5 25cl', format: '2/5', compatibleLines: [19] },
-  { sku: 'DAMM-1/3-33', label: 'Damm 1/3 33cl',      format: '1/3', compatibleLines: [14, 17, 19] },
-  { sku: 'ESTB-1/2-50', label: 'EstB 1/2 50cl',       format: '1/2', compatibleLines: [14, 19] },
+  { sku: 'ED13LP12', label: 'Estrella Damm 1/3 Pack 12', format: '1/3', compatibleLines: [14, 17, 19], l19Speed: 80667 },
+  { sku: 'ED13LTW',  label: 'Estrella Damm 1/3 lata',    format: '1/3', compatibleLines: [14, 17, 19], l19Speed: 78584 },
+  { sku: 'TU13LTN',  label: 'Turia 1/3 lata',            format: '1/3', compatibleLines: [14, 17, 19], l19Speed: 74005 },
 ]
 
 const DAY_OPTIONS = [
-  { value: '2026-05-18', label: 'Mon 18 May' },
-  { value: '2026-05-19', label: 'Tue 19 May' },
-  { value: '2026-05-20', label: 'Wed 20 May' },
-  { value: '2026-05-21', label: 'Thu 21 May' },
-  { value: '2026-05-22', label: 'Fri 22 May' },
+  { value: '2024-12-30', label: 'Mon 30 Dec' },
+  { value: '2024-12-31', label: 'Tue 31 Dec' },
+  { value: '2025-01-01', label: 'Wed 1 Jan' },
+  { value: '2025-01-02', label: 'Thu 2 Jan' },
+  { value: '2025-01-03', label: 'Fri 3 Jan' },
 ]
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
@@ -38,14 +38,14 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
 
 export function WhatIfForm() {
   const [scenarioId, setScenarioId] = useState<ScenarioId>('urgent-demand')
-  const [introductionDay, setIntroductionDay] = useState('2026-05-20')
+  const [introductionDay, setIntroductionDay] = useState('2024-12-31')
   const [introductionHour, setIntroductionHour] = useState(8)
-  const [requiredDay, setRequiredDay] = useState('2026-05-22')
+  const [requiredDay, setRequiredDay] = useState('2025-01-03')
   const [requiredHour, setRequiredHour] = useState(18)
-  const [urgentSku,  setUrgentSku]  = useState('FREQ-2/5-25')
+  const [urgentSku,  setUrgentSku]  = useState('ED13LP12')
   const [urgentUnits, setUrgentUnits] = useState(8000)
   const [breakdownLine, setBreakdownLine] = useState<14 | 17 | 19>(14)
-  const [breakdownDay,  setBreakdownDay]  = useState('2026-05-20')
+  const [breakdownDay,  setBreakdownDay]  = useState('2024-12-31')
   const [breakdownH,    setBreakdownH]    = useState(8)
   const [loading, setLoading]             = useState(false)
   const [result, setResult]               = useState<ReplanScenario | null>(null)
@@ -174,7 +174,7 @@ export function WhatIfForm() {
                     className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary tabular-nums"
                   />
                   <p className="text-xs text-muted-foreground mt-1.5">
-                    ≈ {(urgentUnits / 2375).toFixed(1)} h extra production on L19
+                    ≈ {(urgentUnits / selectedSku.l19Speed).toFixed(1)} h extra production on L19
                   </p>
                 </div>
               </div>
@@ -284,7 +284,10 @@ export function WhatIfForm() {
 
           <RecommendationCard scenario={result} />
 
-          <GanttChart sequence={result.sequence} title="Replan sequence" />
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <GanttChart sequence={result.base_sequence} title="Original S_opt planning — full week" />
+            <GanttChart sequence={result.sequence} title="What-if replan — full week" />
+          </div>
         </div>
       )}
     </div>
