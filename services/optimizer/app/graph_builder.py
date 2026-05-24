@@ -42,6 +42,7 @@ from services.node_cost_ml.app.inference import LoadedModel, load_artefacts, pre
 # ---------------------------------------------------------------------------
 
 DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "clean"
+REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
 LINE_IDS: tuple[int, ...] = (14, 17, 19)
 
 LineId = Literal[14, 17, 19]
@@ -606,6 +607,8 @@ def visualize_wo_graph(
         total_co = sum(d.get("hours", 0.0) for _, _, d in G.edges(data=True))
         total_pred = sum(G.nodes[nd].get("predicted_hours", 0.0) for nd in G.nodes)
         total_actual = sum(G.nodes[nd].get("actual_hours", 0.0) for nd in G.nodes)
+        total_path = total_actual + total_co
+        ax.set_title(f"L{line}  ({n} runs)  —  path total: {total_path:.1f}h")
         ax.set_xlabel(
             f"CO: {total_co:.1f}h  |  pred: {total_pred:.1f}h  |  actual: {total_actual:.1f}h",
             fontsize=7,
@@ -621,7 +624,9 @@ def visualize_wo_graph(
 
 def _smoke_test() -> None:
     demand = _demand()
-    window_id = demand["window_id"].iloc[0]
+    available = demand["window_id"].unique()
+    print(f"available windows ({len(available)}): {list(available[:5])} ...")
+    window_id = "2025-W02-7d"
     print(f"window_id: {window_id}")
 
     print("\nbuild_planning_graph ...")
@@ -643,9 +648,12 @@ def _smoke_test() -> None:
         for ln, ld in G.nodes[sku]["line_data"].items():
             print(f"    L{ln}: {ld['predicted_hours']:.2f}h")
 
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
     fig = visualize_planning_graph(G)
-    fig.savefig("planning_graph.png", dpi=120, bbox_inches="tight")
-    print("\n  saved: planning_graph.png")
+    out1 = REPORTS_DIR / f"planning_graph_{window_id}.png"
+    fig.savefig(out1, dpi=120, bbox_inches="tight")
+    print(f"\n  saved: {out1}")
 
     print("\nbuild_historical_wo_graph ...")
     wo_graphs = build_historical_wo_graph(window_id, demand_df=demand)
@@ -653,8 +661,9 @@ def _smoke_test() -> None:
         print(f"  L{line}: {path.number_of_nodes()} runs, {path.number_of_edges()} transitions")
 
     fig2 = visualize_wo_graph(wo_graphs)
-    fig2.savefig("wo_path_graph.png", dpi=120, bbox_inches="tight")
-    print("\n  saved: wo_path_graph.png")
+    out2 = REPORTS_DIR / f"wo_path_graph_{window_id}.png"
+    fig2.savefig(out2, dpi=120, bbox_inches="tight")
+    print(f"\n  saved: {out2}")
 
 
 if __name__ == "__main__":
